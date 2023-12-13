@@ -1,0 +1,16 @@
+{
+  "name": "socket-io-example",
+  "version": "1.0.0",
+  "description": "A simple Socket.io example",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1",
+    "socket.io": "^4.0.1"
+  }
+}
