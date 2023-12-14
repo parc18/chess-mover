@@ -1,1 +1,6 @@
 node_modules/
+.DS_Store
+app.log
+logs/
+package-lock.json
+.gitignore
