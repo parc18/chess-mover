@@ -6,6 +6,48 @@ const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const { Chess } = require('chess.js')
 const base64 = require('base64url');
+const winston = require('winston');
+
+
+//############################################################################################
+//########################### LOGGER  STARTS #################################################
+
+const { format, transports } = winston
+const path = require('path')
+
+const logFormat = format.printf(info => `${info.timestamp} ${info.level} [${info.label}]: ${info.message}`)
+
+const logger = winston.createLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  format: format.combine(
+    format.label({ label: path.basename(process.mainModule.filename) }),
+    format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    // Format the metadata object
+    format.metadata({ fillExcept: ['message', 'level', 'timestamp', 'label'] })
+  ),
+  transports: [
+    new transports.Console({
+      format: format.combine(
+        format.colorize(),
+        logFormat
+      )
+    }),
+    new transports.File({
+      filename: 'logs/combined.log',
+      format: format.combine(
+        // Render in one line in your log file.
+        // If you use prettyPrint() here it will be really
+        // difficult to exploit your logs files afterwards.
+        format.json()
+      )
+    })
+  ],
+  exitOnError: false
+})
+//############################################################################################
+//########################### LOGGER  ENDS #################################################
+
+
 // Load environment variables from .env file
 dotenv.config();
 
@@ -34,13 +76,13 @@ function handleDisconnect() {
 
   connection.connect(function(err) {              // The server is either down
     if(err) {                                     // or restarting (takes a while sometimes).
-      console.log('error when connecting to db:', err);
+       logger.error('error when connecting to db:', JSON.stringify(err));
       setTimeout(handleDisconnect, 2000); // We introduce a delay before attempting to reconnect,
     }                                     // to avoid a hot loop, and to allow our node script to
   });                                     // process asynchronous requests in the meantime.
                                           // If you're also serving http, display a 503 error.
   connection.on('error', function(err) {
-    console.log('db error', err);
+    logger.error('db error', JSON.stringify(err));
     if(err.code === 'PROTOCOL_CONNECTION_LOST') { // Connection to the MySQL server is usually
       handleDisconnect();                         // lost due to either server restart, or a
     } else {                                      // connnection idle timeout (the wait_timeout
@@ -55,21 +97,20 @@ handleDisconnect();
 // Connect to the database
 db.connect((err) => {
   if (err) {
-    console.error('Error connecting to MySQL database:', err);
+    logger.error("Error connecting to Error connecting to MySQL database:", JSON.stringify(err));
     return;
   }
-  console.log('Connected to MySQL database');
+  logger.info("Connected to MySQL database");
 });
 
 // Middleware function to validate JWT token
 const authenticateToken = (token) => {
   try {
-    token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJBIiwiaWF0IjoxNzAyNDk3NjUzfQ.LW9VKdj4p7QAB78Y0F9ezlX2wTtlWTdJlv4St3VtJVM";
-    const decoded = jwt.verify(token, "javainuse", { algorithms: ['HS256'], ignoreExpiration: true, encoding: 'utf-8' });
-
+    logger.debug(`authetication started of jwt token ${token}`, token);
+    const decoded = jwt.verify(token, "javainuse", { algorithms: ['HS256'], encoding: 'utf-8' });
     return decoded;
   } catch (error) {
-    console.error('JWT Token validation error:', error);
+    logger.error(`JWT Token validation error with ${error} returning null` ,error);
     return null;
   }
 };
@@ -81,26 +122,22 @@ var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 var matchDuration = 399;
 
 io.on('connection', (socket) => {
-  console.log('A user connected');
+  logger.info('connection estabished');
 
   socket.on('move', (data) => {
-    console.log('Move event received:', data);
-          const jwtParts = data.auth.split('.');
+      logger.debug("Move event received: " + JSON.stringify(data));
+      const jwtParts = data.auth.split('.');
       const headerInBase64UrlFormat = jwtParts[0];
       payloadInBase64UrlFormat = jwtParts[1];
       const signatureInBase64UrlFormat = jwtParts[2];
-      console.log('emitting' +  base64.decode(payloadInBase64UrlFormat));
 
     // Validate JWT token
     const tokenData = authenticateToken(data.auth);
 
     if (tokenData) {
       // Token is valid, handle the move event logic here
-      console.log('User authenticated:', tokenData);
+      logger.info('User authenticated!!!');
 
-
-
-    console.log("Incoming requests");
     // VALIDATE THE SECRET LATER
     position = data;
     var game = new Chess(data.prevFen);
@@ -112,7 +149,7 @@ io.on('connection', (socket) => {
 
       // illegal move
     if (move === null) {
-      console.log("illegal move")
+      logger.error("illegal move")
     }else{
       var userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
       game = new Chess(data.fen);
@@ -124,7 +161,7 @@ io.on('connection', (socket) => {
         status = 'RUNNING'
       }
       if(data.gameOver) {
-        console.log('game over')
+        console.info('game over');
         return;
       }
       var userName1 = userName1Obj.sub;
@@ -181,18 +218,18 @@ io.on('connection', (socket) => {
                 query = "insert into ?? (`userName1`,`userName2`,`eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `time`, `source`, `target`, `status`, `minute_left`) values(?,?,?,?,?,?,?, FROM_UNIXTIME(?), ? ,?, ?, ?)";
                 table = ["move" , userName1, userName2, eventId, matchId, challengeId, pgn, fen, timeStamp ,source, target, status, time ];
                 query = mysql.format(query, table);
-                console.log(query);
+                logger.debug(query);
                 connection.query(query, function (err, rows) {
                     if (err) {
-                        console.log("err bitxh", err)
+                        logger.error("DB ERROR ",JSON.stringify(err));
                     } else {
                         connection.commit(function(err) {
                             if (err) { 
                                 connection.rollback(function() {
-                                    console.log("err2 bitxh", err)
+                                  logger.error("error rollback for",JSON.stringify(err));
                                 });
                             } else {    
-                                console.log("succ bitxh", rows)
+                                logger.info("successfully made amove");
                             }
                         });
                     }
@@ -202,11 +239,8 @@ io.on('connection', (socket) => {
                 }else{
                   position.gameOver = false
                 }
-                                console.log(data.matchId, 'hi', position)
-
-                      // Broadcast the move event to all connected clients
+                // Broadcast the move event to all connected clients
                 io.emit(data.matchId, position);
-                //Socketio.emit(data.matchId, position)
             });
           });
         }
@@ -218,13 +252,13 @@ io.on('connection', (socket) => {
 
     } else {
       // Token is invalid, handle accordingly (e.g., emit an error event)
-      console.log('Invalid token');
+      logger.error('Invalid token');
       socket.emit('error', 'Invalid token');
     }
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    logger.info('User disconnected');
   });
 });
 
