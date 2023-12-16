@@ -14,7 +14,7 @@ const winston = require('winston');
 
 const { format, transports } = winston
 const path = require('path')
-
+const ONE = 1;
 const logFormat = format.printf(info => `${info.timestamp} ${info.level} [${info.label}]: ${info.message}`)
 
 const logger = winston.createLogger({
@@ -161,7 +161,7 @@ io.on('connection', (socket) => {
         status = 'RUNNING'
       }
       if(data.gameOver) {
-        console.info('game over');
+        logger.debug('game over');
         return;
       }
       var userName1 = userName1Obj.sub;
@@ -173,7 +173,7 @@ io.on('connection', (socket) => {
       var fen = data.fen;
       var target = data.target
       var source = data.source
-      console.log(pgn)
+      logger.debug(pgn);
         if (true) {
             connection.beginTransaction(function(err) {
                 var query = "select * from ?? where matchId = ?  order by id desc limit 2";
@@ -181,35 +181,35 @@ io.on('connection', (socket) => {
                 query = mysql.format(query, table);
                 connection.query(query, function (err, rows) {
                     if (err) {
-                        console.log(err);
-                        return;
+                      logger.error("Error while connecting to db " + JSON.stringify(err));
+                      return;
                     } else {
-                        console.log(rows);
                         if(rows.length > 0){
-                          if(rows[0].status === 'CONCLUDED'){
+                          var gameStatus = rows[0].status;
+                          var userNameOfLastMoved = rows[0].userName1;
+                          var userNameOfCurrentMove =  userName1;
+                          var totalMovesMadeSoFarInGame= rows.length;
+                          if( gameStatus === 'CONCLUDED'){
                             return;
                           }
-                          if(rows[0].userName1===userName1)
+                          if(userNameOfLastMoved===userNameOfCurrentMove)
                             return
-                          if(rows.length == 1){
+                          if(totalMovesMadeSoFarInGame == ONE){
+                            logger.info("only one move case executing..!!!");
                             timeStamp = new Date().getTime()/1000;
                             var s = new Date(rows[0].time)
                             var s2 = new Date(s.getTime()+(330*60000));
-                            console.log(new Date().getTime(), 'sssss')
-                            console.log(s2.getTime())
                             time = matchDuration - ((new Date().getTime() - s2.getTime())/1000);
-                            console.log('time', time)
-                          } else if(rows.length > 1) {
+                          } else if(totalMovesMadeSoFarInGame > ONE) {
+                            logger.info("more than one move case executing..!!!");
                             timeStamp = new Date().getTime()/1000;
                             last_remaining_time = rows[1].minute_left;
-                             var s = new Date(rows[0].time)
+                            var s = new Date(rows[0].time)
                             var s2 = new Date(s.getTime()+(330*60000));
                             time = last_remaining_time - ((new Date().getTime() - s2.getTime())/1000);
                           }
-                          console.log(rows[0].time)
                           var s = new Date(rows[0].time)
-                          console.log(new Date(s.getTime()+(330*60000)))
-                          console.log(new Date())
+
                         } else {
                           time = matchDuration;
                           timeStamp = new Date().getTime()/1000;
@@ -265,5 +265,5 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  logger.info(`Server is running on http://localhost:${PORT}`);
 });
