@@ -119,7 +119,15 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-var matchDuration = 399;
+var MATCH_DURATION_IN_MINUTES = 40;
+const ONE_THOUSAND = 1000;
+const MINUTE_TO_SECONDS_MULTIPLYER_60 = 60;
+const CONCLUDED_STATUS ='CONCLUDED';
+const NO_SHOW_STATUS ='NO_SHOW';
+const BLACK_EMPTY_MOVE_FOR_NO_SHOW = 'EMPTY_MOVE';
+let REMAINING_TIME_WHITE_IN_SECONDS = (MATCH_DURATION_IN_MINUTES * 60) / 2;
+let REMAINING_TIME_BLACK_IN_SECONDS = (MATCH_DURATION_IN_MINUTES * 60) / 2;
+const RUNNING = 'RUNNING'
 
 io.on('connection', (socket) => {
   logger.info('connection estabished');
@@ -158,7 +166,7 @@ io.on('connection', (socket) => {
       } else if (game.in_draw()) {
         status = 'DRAW'
       } else {
-        status = 'RUNNING'
+        status = RUNNING
       }
       if(data.gameOver) {
         logger.debug('game over');
@@ -179,6 +187,8 @@ io.on('connection', (socket) => {
                 var query = "select * from ?? where matchId = ?  order by id desc limit 2";
                 var table = ["move" , matchId];
                 query = mysql.format(query, table);
+                var currentTimeStampInMillis= new Date().getTime();
+                let remaining_millis=0;
                 connection.query(query, function (err, rows) {
                     if (err) {
                       logger.error("Error while connecting to db " + JSON.stringify(err));
@@ -189,34 +199,44 @@ io.on('connection', (socket) => {
                           var userNameOfLastMoved = rows[0].userName1;
                           var userNameOfCurrentMove =  userName1;
                           var totalMovesMadeSoFarInGame= rows.length;
-                          if( gameStatus === 'CONCLUDED'){
+                          //createThis
+                          var matchStartTimeString = rows[0].matchStartTime;
+                          if( gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS){
                             return;
                           }
                           if(userNameOfLastMoved===userNameOfCurrentMove)
                             return
                           if(totalMovesMadeSoFarInGame == ONE){
-                            logger.info("only one move case executing..!!!");
-                            timeStamp = new Date().getTime()/1000;
-                            var s = new Date(rows[0].time)
-                            var s2 = new Date(s.getTime()+(330*60000));
-                            time = matchDuration - ((new Date().getTime() - s2.getTime())/1000);
+                            const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
+
+                            millisDiff =  new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
+
+                            if(gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
+                              logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!!");
+                              remaining_millis = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - millisDiff;
+                            } else if (gameStatus === RUNNING) {
+                              remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff
+                            }
                           } else if(totalMovesMadeSoFarInGame > ONE) {
                             logger.info("more than one move case executing..!!!");
-                            timeStamp = new Date().getTime()/1000;
-                            last_remaining_time = rows[1].minute_left;
-                            var s = new Date(rows[0].time)
-                            var s2 = new Date(s.getTime()+(330*60000));
-                            time = last_remaining_time - ((new Date().getTime() - s2.getTime())/1000);
+                            var gameStatus = rows[1].status;
+                            if(gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
+                              logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!!");
+                              remaining_millis = (REMAINING_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
+                            } else if (gameStatus === RUNNING) {
+                              const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
+                              millisDiff =  new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
+                              remaining_millis = rows[1].remaining_millis - millisDiff ;
+                            }
                           }
-                          var s = new Date(rows[0].time)
-
                         } else {
-                          time = matchDuration;
-                          timeStamp = new Date().getTime()/1000;
+                          logger.info('last else when no records found');
+                          remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
                         }
                     }
-                query = "insert into ?? (`userName1`,`userName2`,`eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `time`, `source`, `target`, `status`, `minute_left`) values(?,?,?,?,?,?,?, FROM_UNIXTIME(?), ? ,?, ?, ?)";
-                table = ["move" , userName1, userName2, eventId, matchId, challengeId, pgn, fen, timeStamp ,source, target, status, time ];
+
+                query = "insert into ?? (`userName1`,`userName2`,`eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `current_move_time_millis`, `source`, `target`, `status`, `remaining_millis`) values(?,?,?,?,?,?,?, FROM_UNIXTIME(?), ? ,?, ?, ?)";
+                table = ["move" , userName1, userName2, eventId, matchId, challengeId, pgn, fen, currentTimeStampInMillis /1000 ,source, target, status, remaining_millis ];
                 query = mysql.format(query, table);
                 logger.debug(query);
                 connection.query(query, function (err, rows) {
@@ -234,7 +254,7 @@ io.on('connection', (socket) => {
                         });
                     }
                 })
-                if(time<=0){
+                if(remaining_millis <=0){
                   position.gameOver = true
                 }else{
                   position.gameOver = false
