@@ -221,9 +221,16 @@ io.on('connection', (socket) => {
                             logger.info("more than one move case executing..!!!");
                             var gameStatus = rows[1].status;
                             if(gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
-                              logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!!");
-                              remaining_millis = (REMAINING_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
+                              logger.info("BLACK is moving now, after white made a move follwed by EMPTY_MOVE..");
+                              const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
+                              millisDiff =  new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
+                              logger.info("millidiff"  + millisDiff);
+                               logger.info("REMAINING_TIME_BLACK_IN_SECONDS" + REMAINING_TIME_BLACK_IN_SECONDS);
+
+                              remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
+                              logger.info("remaining_millis" + remaining_millis);
                             } else if (gameStatus === RUNNING) {
+                              logger.info("LAST CASE RUNNING..!!");
                               const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
                               millisDiff =  new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
                               remaining_millis = rows[1].remaining_millis - millisDiff ;
