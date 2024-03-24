@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const { Chess } = require('chess.js')
 const base64 = require('base64url');
 const winston = require('winston');
+const util = require('util');
+const queryAsync = util.promisify(connection.query).bind(connection);
 
 
 //############################################################################################
@@ -182,21 +184,20 @@ io.on('connection', (socket) => {
       var target = data.target;
       var source = data.source;
       var validPlayer = false;
-      var query = "select * from ?? where id = ?  AND (user_1 = ? OR user_2 = ?)";
-                var table = ["matches" , matchId, userName1, userName1];
-                query = mysql.format(query, table);
-                var currentTimeStampInMillis= new Date().getTime();
-                let remaining_millis=0;
-                connection.query(query, function (err, rows) {
-                    if (err) {
-                      logger.error("Error while connecting to db " + JSON.stringify(err));
-                      return;
-                    } else {
-                      if(rows.length > 0){
-                        validPlayer = true;
-                      }
-                    }
-                  });
+      try {
+          const query1 = "SELECT * FROM ?? WHERE id = ? AND (user_1 = ? OR user_2 = ?)";
+          const table1 = ["matches", matchId, userName1, userName1];
+          const formattedQuery1 = mysql.format(query1, table1);
+
+          const rows1 = await queryAsync(formattedQuery1);
+          
+          if (rows1.length > 0) {
+              validPlayer = true;
+          }
+      } catch (err) {
+          logger.error("Error while connecting to db " + JSON.stringify(err));
+          return;
+      }
         //logger.debug(pgn);
         if (validPlayer) {
             connection.beginTransaction(function(err) {
