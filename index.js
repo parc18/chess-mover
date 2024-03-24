@@ -195,7 +195,8 @@ io.on('connection', (socket) => {
                                 logger.error("Error while connecting to db " + JSON.stringify(err));
                                 return;
                             } else {
-                              if(rows.length > 0){
+                              logger.debug(rows1);
+                              if(rows1.length > 0){
 
 logger.debug('yey');
                 var query = "select * from ?? where matchId = ?  order by id desc limit 2";
