@@ -203,13 +203,16 @@ io.on('connection', (socket) => {
                 const query1 = "SELECT * FROM ?? WHERE id = ? AND (user_1 = ? OR user_2 = ?)";
                 const table1 = ["matches", matchId, userName1, userName1];
                 const formattedQuery1 = mysql.format(query1, table1);
-
-                queryAsync(formattedQuery1)
-                    .then(rows1 => {
-                        if (rows1.length > 0) {
-    
-                //logger.debug(pgn);
-                if (validPlayer) {
+                logger.debug('Query is : ');
+                logger.debug(query);
+                connection.query(formattedQuery1, function(err, rows) {
+                            if (err) {
+                                logger.error("Error while connecting to db " + JSON.stringify(err));
+                                return;
+                            } else {
+                if (rows.length > 0) {
+                  logger.debug('yeye');
+                                  if (validPlayer) {
                     connection.beginTransaction(function(err) {
                         var query = "select * from ?? where matchId = ?  order by id desc limit 2";
                         var table = ["move", matchId];
@@ -298,13 +301,17 @@ io.on('connection', (socket) => {
                         });
                     });
                 }
-                                   validPlayer = true;
-                        }
-                    })
-                    .catch(err => {
-                        logger.error("Error while connecting to db " + JSON.stringify(err));
-                    });
+                }
+
+                            }
+                          })
+                //logger.debug(pgn);
+
             }
+
+
+
+
         } else {
             // Token is invalid, handle accordingly (e.g., emit an error event)
             logger.error('Invalid token');
