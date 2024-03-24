@@ -189,7 +189,7 @@ io.on('connection', (socket) => {
                 const table1 = ["matches", matchId, userName1, userName1];
                 const formattedQuery1 = mysql.format(query1, table1);
                 logger.debug('Query is : ');
-                logger.debug(query);
+                logger.debug(formattedQuery1);
                 connection.query(formattedQuery1, function(err, rows1) {
                             if (err) {
                                 logger.error("Error while connecting to db " + JSON.stringify(err));
@@ -197,7 +197,7 @@ io.on('connection', (socket) => {
                             } else {
                               if(rows.length > 0){
 
-
+logger.debug('yey');
                 var query = "select * from ?? where matchId = ?  order by id desc limit 2";
                 var table = ["move" , matchId];
                 query = mysql.format(query, table);
