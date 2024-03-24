@@ -182,7 +182,7 @@ io.on('connection', (socket) => {
       var target = data.target;
       var source = data.source;
       var validPlayer = false;
-      var query = "select * from ?? where id = ?  AND (user_1 == ? OR user_2 == ?)";
+      var query = "select * from ?? where id = ?  AND (user_1 = ? OR user_2 = ?)";
                 var table = ["matches" , matchId, userName1, userName1];
                 query = mysql.format(query, table);
                 var currentTimeStampInMillis= new Date().getTime();
