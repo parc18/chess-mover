@@ -179,10 +179,26 @@ io.on('connection', (socket) => {
       var challengeId = '';
       var pgn = data.pgn;
       var fen = data.fen;
-      var target = data.target
-      var source = data.source
-      logger.debug(pgn);
-        if (true) {
+      var target = data.target;
+      var source = data.source;
+      var validPlayer = false;
+      var query = "select * from ?? where id = ?  AND (user_1 == ? OR user_2 == ?)";
+                var table = ["matches" , matchId, userName1, userName1];
+                query = mysql.format(query, table);
+                var currentTimeStampInMillis= new Date().getTime();
+                let remaining_millis=0;
+                connection.query(query, function (err, rows) {
+                    if (err) {
+                      logger.error("Error while connecting to db " + JSON.stringify(err));
+                      return;
+                    } else {
+                      if(rows.length > 0){
+                        validPlayer = true;
+                      }
+                    }
+                  });
+        //logger.debug(pgn);
+        if (validPlayer) {
             connection.beginTransaction(function(err) {
                 var query = "select * from ?? where matchId = ?  order by id desc limit 2";
                 var table = ["move" , matchId];
