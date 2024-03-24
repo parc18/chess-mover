@@ -8,7 +8,6 @@ const { Chess } = require('chess.js')
 const base64 = require('base64url');
 const winston = require('winston');
 const util = require('util');
-const queryAsync = util.promisify(connection.query).bind(connection);
 
 
 //############################################################################################
@@ -184,19 +183,21 @@ io.on('connection', (socket) => {
       var target = data.target;
       var source = data.source;
       var validPlayer = false;
+      const queryAsync = util.promisify(connection.query).bind(connection);
+
           const query1 = "SELECT * FROM ?? WHERE id = ? AND (user_1 = ? OR user_2 = ?)";
           const table1 = ["matches", matchId, userName1, userName1];
           const formattedQuery1 = mysql.format(query1, table1);
 
          queryAsync(formattedQuery1)
-        .then(rows1 => {
-          if (rows1.length > 0) {
-            validPlayer = true;
-          }
-        })
-        .catch(err => {
-          logger.error("Error while connecting to db " + JSON.stringify(err));
-        });
+          .then(rows1 => {
+            if (rows1.length > 0) {
+              validPlayer = true;
+            }
+          })
+          .catch(err => {
+            logger.error("Error while connecting to db " + JSON.stringify(err));
+          });
         //logger.debug(pgn);
         if (validPlayer) {
             connection.beginTransaction(function(err) {
