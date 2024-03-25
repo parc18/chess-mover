@@ -269,9 +269,9 @@ io.on('connection', (socket) => {
                                                         const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
                                                         millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
                                                         remaining_millis = rows[1].remaining_millis - millisDiff;
-                                                        position.userName1 = userName1;
-                                                        position.time1 = remaining_millis-3000;
-                                                        position.time2 = rows[0].remaining_millis-3000;
+                                                        // position.userName1 = userName1;
+                                                        // position.time1 = remaining_millis-3000;
+                                                        // position.time2 = rows[0].remaining_millis-3000;
                                                     }
                                                 }
                                             } else {
