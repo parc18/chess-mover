@@ -135,7 +135,7 @@ app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-var MATCH_DURATION_IN_MINUTES = 40;
+var MATCH_DURATION_IN_MINUTES = 6;
 const ONE_THOUSAND = 1000;
 const MINUTE_TO_SECONDS_MULTIPLYER_60 = 60;
 const CONCLUDED_STATUS = 'CONCLUDED';

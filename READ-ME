@@ -1,0 +1,7 @@
+pm2 list
+   50  pm2 restart index.js --name 32chess
+   51  pm2 start index.js --name 32chess
+   52  pm2 save
+   53  pm2 save --force
+   54  sudo reboot
+   55  pm2 list
