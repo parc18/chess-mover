@@ -176,7 +176,9 @@ io.on('connection', (socket) => {
             if (move === null) {
                 logger.error("Illegal move")
                 position.error = true
+                position.isReload = true
                 io.emit(data.matchId, position);
+                return;
             } else {
                 var userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
                 game = new Chess(data.fen);
@@ -192,6 +194,7 @@ io.on('connection', (socket) => {
                     return;
                 }
                 var userName1 = userName1Obj.sub;
+                position.userName1 = userName1;
                 var userName2 = "";
                 var eventId = '';
                 var matchId = data.matchId;
@@ -200,6 +203,8 @@ io.on('connection', (socket) => {
                 var fen = data.fen;
                 var target = data.target
                 var source = data.source
+                var millitTimeForUserName_1 = 0;
+                var millitTimeForUserName_2 = 0;
                 logger.debug(pgn);
                 if (true) {
                   logger.debug('Query is : ');
@@ -213,12 +218,13 @@ io.on('connection', (socket) => {
                         connection.query(formattedQuery1, function(err, rows1) {
                             if (err) {
                                 logger.error("Error while connecting to db " + JSON.stringify(err));
+                                    position.error = true
+                                    position.isReload = true
+                                    io.emit(data.matchId, position);
                                 return;
                             } else {
                                 logger.debug(rows1);
                                 if (rows1.length > 0) {
-
-                                    logger.debug('yey');
                                     var query = "select * from ?? where matchId = ?  order by id desc limit 2";
                                     var table = ["move", matchId];
                                     query = mysql.format(query, table);
@@ -236,22 +242,21 @@ io.on('connection', (socket) => {
                                                 var totalMovesMadeSoFarInGame = rows.length;
                                                 //createThis
                                                 var matchStartTimeString = rows[0].matchStartTime;
-                                                if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS) {
+                                                if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
+                                                    position.isReload = true
+                                                    io.emit(data.matchId, position);
                                                     return;
                                                 }
-                                                if (userNameOfLastMoved === userNameOfCurrentMove)
-                                                    return
                                                 if (totalMovesMadeSoFarInGame == ONE) {
                                                     const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
-
                                                     millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
-
                                                     if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
                                                         logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!!");
                                                         remaining_millis = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - millisDiff;
                                                     } else if (gameStatus === RUNNING) {
                                                         remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff
                                                     }
+                                                    millitTimeForUserName_1 = remaining_millis;
                                                 } else if (totalMovesMadeSoFarInGame > ONE) {
                                                     logger.info("more than one move case executing..!!!");
                                                     var gameStatus = rows[1].status;
@@ -264,11 +269,13 @@ io.on('connection', (socket) => {
 
                                                         remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
                                                         logger.info("remaining_millis" + remaining_millis);
+                                                        millitTimeForUserName_1 = rows[0].remaining_millis;
                                                     } else if (gameStatus === RUNNING) { 
                                                         logger.info("LAST CASE RUNNING..!!");
                                                         const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
                                                         millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
                                                         remaining_millis = rows[1].remaining_millis - millisDiff;
+                                                        millitTimeForUserName_1 = rows[0].remaining_millis;
                                                         // position.userName1 = userName1;
                                                         // position.time1 = remaining_millis-3000;
                                                         // position.time2 = rows[0].remaining_millis-3000;
@@ -277,15 +284,22 @@ io.on('connection', (socket) => {
                                             } else {
                                                 logger.info('last else when no records found');
                                                 remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
+                                                millitTimeForUserName_1 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
+                                                millitTimeForUserName_2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
+
                                             }
                                         }
                                         if (remaining_millis <= 0) {
-                                            position.gameOver = true
+                                            position.gameOver = true;
+                                            position.isReload = true;
+                                            position.millitTimeForUserName_1 = 0;
+                                            position.millitTimeForUserName_1 = millitTimeForUserName_1;
                                             io.emit(data.matchId, position);
                                             return;
                                         }
                                         // Broadcast the move event to all connected clients
 
+                                        millitTimeForUserName_2 = remaining_millis;
                                         query = "insert into ?? (`userName1`,`userName2`,`eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `current_move_time_millis`, `source`, `target`, `status`, `remaining_millis`) values(?,?,?,?,?,?,?, FROM_UNIXTIME(?), ? ,?, ?, ?)";
                                         table = ["move", userName1, userName2, eventId, matchId, challengeId, pgn, fen, currentTimeStampInMillis / 1000, source, target, status, remaining_millis];
                                         query = mysql.format(query, table);
@@ -311,6 +325,8 @@ io.on('connection', (socket) => {
                                             position.gameOver = false
                                         }
                                         // Broadcast the move event to all connected clients
+                                        position.millitTimeForUserName_1 = millitTimeForUserName_1;
+                                        position.millitTimeForUserName_2 = millitTimeForUserName_2;
                                         io.emit(data.matchId, position);
                                     });
 
