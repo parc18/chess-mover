@@ -305,7 +305,7 @@ io.on('connection', (socket) => {
                                                 });
                                             }
                                         })
-                                        if (remaining_millis <= 0) {
+                                        if (remaining_millis < 1000) {
                                             position.gameOver = true
                                         } else {
                                             position.gameOver = false
