@@ -251,27 +251,27 @@ io.on('connection', (socket) => {
                                                     const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
                                                     millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
                                                     if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
-                                                        logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!!");
+                                                        logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!! for matchId" + matchId);
                                                         remaining_millis = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - millisDiff;
                                                     } else if (gameStatus === RUNNING) {
                                                         remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff
                                                     }
                                                     millitTimeForUserName_1 = remaining_millis;
                                                 } else if (totalMovesMadeSoFarInGame > ONE) {
-                                                    logger.info("more than one move case executing..!!!");
+                                                    logger.info("more than one move case executing..!!! for matchId" + matchId);
                                                     var gameStatus = rows[1].status;
                                                     if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
-                                                        logger.info("BLACK is moving now, after white made a move follwed by EMPTY_MOVE..");
+                                                        logger.info("BLACK is moving now, after white made a move follwed by EMPTY_MOVE.. for matchId" + matchId);
                                                         const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
                                                         millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
-                                                        logger.info("millidiff" + millisDiff);
-                                                        logger.info("REMAINING_TIME_BLACK_IN_SECONDS" + REMAINING_TIME_BLACK_IN_SECONDS);
+                                                        logger.info("millidiff" + millisDiff + "matchId" + matchId);
+                                                        logger.info("REMAINING_TIME_BLACK_IN_SECONDS" + REMAINING_TIME_BLACK_IN_SECONDS +" matcheid" + matchId);
 
                                                         remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
-                                                        logger.info("remaining_millis" + remaining_millis);
+                                                        logger.info("remaining_millis" + remaining_millis +" matcheid" + matchId);
                                                         millitTimeForUserName_1 = rows[0].remaining_millis;
                                                     } else if (gameStatus === RUNNING) { 
-                                                        logger.info("LAST CASE RUNNING..!!");
+                                                        logger.info("LAST CASE RUNNING..!!" + " matcheid" + matchId);
                                                         const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
                                                         millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
                                                         remaining_millis = rows[1].remaining_millis - millisDiff;
@@ -282,14 +282,14 @@ io.on('connection', (socket) => {
                                                     }
                                                 }
                                             } else {
-                                                logger.info('last else when no records found');
+                                                logger.info("last else when no records found" + " matcheid" + matchId);
                                                 remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
                                                 millitTimeForUserName_1 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
                                                 millitTimeForUserName_2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
 
                                             }
                                         }
-                                        if (remaining_millis <= 0) {
+                                        if (remaining_millis <= 100) {
                                             position.gameOver = true;
                                             position.isReload = true;
                                             position.millitTimeForUserName_1 = 0;
@@ -319,7 +319,7 @@ io.on('connection', (socket) => {
                                                 });
                                             }
                                         })
-                                        if (remaining_millis < 1000) {
+                                        if (remaining_millis <= 100) {
                                             position.gameOver = true
                                         } else {
                                             position.gameOver = false
