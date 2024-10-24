@@ -9,6 +9,10 @@ const {
 } = require('chess.js')
 const base64 = require('base64url');
 const winston = require('winston');
+const Match = require('./model/Match');
+const Move = require('./model/Move');
+const { acquireLock, releaseLock, waitForLock } = require('./lockManager'); // Import the lock functions
+const lock = {};
 
 
 //############################################################################################
@@ -134,6 +138,215 @@ const authenticateToken = (token) => {
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
+
+
+
+
+
+
+app.get('/match/:id', verifyJWT, async (req, res) => {
+    const id = req.params.id;
+    const userName = req.query.userName;
+    try {
+        // Acquire the lock
+        const isLockAcquired = acquireLock(matchId);
+
+        // Wait if the lock is already acquired
+        if (!isLockAcquired) {
+          await waitForLock(matchId);
+        }
+
+        if (id < 1) {
+            return res.status(400).json({ message: 'Invalid match ID' });
+        }
+
+        try {
+            const match = await Match.findOne({ where: { id } });
+            if (!match) {
+                return res.status(404).json({ message: 'Match not found' });
+            }
+
+            // Set color based on userName comparison
+            match.color = match.userName1.toLowerCase() === userName.toLowerCase() ? 'white' : 'black';
+
+            // Fetch latest move (call to getLatestMove)
+            const latestMove = await getLatestMove(id, userName, match);
+
+            // Set the match response structure
+            const response = {
+                match: {
+                    id: match.id,
+                    userName1: match.userName1,
+                    userName2: match.userName2,
+                    color: match.color,
+                    minuteLeft: latestMove ? latestMove.minuteLeft : MatchConstant.MATCH_DURATION / 2,
+                    minuteLeft2: latestMove ? latestMove.minuteLeft2 : MatchConstant.MATCH_DURATION / 2,
+                },
+                move: latestMove,
+            };
+
+            res.json(response);
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ message: 'Error fetching match' });
+        }
+    } catch (error) {
+        // Handle errors (if any occur during processing)
+        return res.status(500).json({
+            message: 'An error occurred while retrieving the match',
+            error: error.message,
+        });
+    } finally {
+        // Always release the lock after processing is complete
+        releaseLock(matchId);
+    }
+
+
+
+});
+
+function verifyJWT(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization header missing or malformed' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    jwt.verify(token, "javainuse", {
+        algorithms: ['HS256'],
+        encoding: 'utf-8'
+    }, (err, user) => {
+        if (err) {
+            return res.status(403).json({ message: 'Invalid or expired token' });
+        }
+         logger.info("JWT USER ", JSON.stringify(user));
+        req.user = user; // attach the decoded user information to the request object
+        next();
+    });
+}
+
+async function getLatestMove(id, userName, match) {
+  let shouldRunGameOverCheck = false;
+  if (userName && (userName.toLowerCase() === match.userName1.toLowerCase() || userName.toLowerCase() === match.userName2.toLowerCase())) {
+    shouldRunGameOverCheck = true;
+  }
+
+  // Fetch the latest two moves ordered by 'id' in descending order
+  const moves = await Move.findAll({
+    where: { matchId: id },
+    order: [['id', 'DESC']],
+    limit: 2,
+  });
+
+  if (moves.length === 0) return null;
+
+  let lastMove = moves[0].toJSON();
+  let secondLastMove = moves.length > 1 ? moves[1].toJSON() : null;
+
+  // If the move status is DONE or specific no-show cases
+  if (lastMove.status === 'DONE' || lastMove.status === MatchConstant.BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
+    handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLastMove);
+    return lastMove;
+  }
+
+  // Handle case for running moves and conclusion checks
+  handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck);
+
+  if (shouldRunGameOverCheck) {
+    await isGameOver(lastMove, secondLastMove, lastMove.userName1);
+  }
+
+  return lastMove;
+}
+
+function handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLastMove) {
+  if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+    lastMove.minuteLeft = MatchConstant.MATCH_DURATION / 2;
+    lastMove.minuteLeft2 = getAdjustedTime(lastMove);
+  } else {
+    lastMove.minuteLeft2 = MatchConstant.MATCH_DURATION / 2;
+    lastMove.minuteLeft = getAdjustedTime(lastMove);
+  }
+
+  if (lastMove.minuteLeft2 <= 0) {
+    lastMove.remainingMillis = -1;
+    if (shouldRunGameOverCheck) isGameOver(lastMove, secondLastMove, lastMove.userName1);
+  }
+}
+
+function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck) {
+  const remainingTime = getAdjustedTime(lastMove);
+
+  if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+    lastMove.minuteLeft2 = remainingTime;
+    lastMove.minuteLeft = lastMove.remainingMillis;
+  } else {
+    lastMove.minuteLeft2 = lastMove.remainingMillis;
+    lastMove.minuteLeft = remainingTime;
+  }
+
+  if (remainingTime <= 0) {
+    lastMove.remainingMillis = -1;
+    if (shouldRunGameOverCheck) isGameOver(lastMove, secondLastMove, lastMove.userName1);
+  }
+}
+
+function getAdjustedTime(move) {
+  return (MatchConstant.MATCH_DURATION / 2) - (Date.now() - move.currentTimeStampInMillis);
+}
+
+async function isGameOver(lastMove, secondLastMove, winnerUserName) {
+  if (lastMove.status === 'DONE') return;
+
+  let desc = 'DIRECT';
+  if (lastMove.remainingMillis <= MatchConstant.timesUpsDeltaCheck) {
+    desc = 'D_TIME';
+  }
+
+  await Match.update(
+    { winner: winnerUserName, winDesc: desc },
+    { where: { id: lastMove.matchId } }
+  );
+
+  await Move.update(
+    { status: 'DONE' },
+    { where: { id: lastMove.id } }
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 var MATCH_DURATION_IN_MINUTES = 6;
 const ONE_THOUSAND = 1000;
