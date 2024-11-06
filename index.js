@@ -159,97 +159,74 @@ app.get('/', (req, res) => {
 
 
 
-
+// Route handler using the refactored function
 app.get('/match/:id', verifyJWT, async (req, res) => {
-    const id = req.params.id;
-    console.log('lol ' +req.user)
+    const id = parseInt(req.params.id, 10);
     const userName = req.user;
-    console.log('lol ' +userName)
-    let match = null; 
+
+    try {
+        const response = await fetchMatchDetails(id, userName);
+        res.json(response);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            message: 'An error occurred while retrieving the match',
+            error: error.message,
+        });
+    }
+});
+
+// Refactored function to handle the main logic of fetching a match by ID and username
+async function fetchMatchDetails(id, userName) {
+    let match = null;
     let latestMove1 = null;
+
     try {
         // Acquire the lock
         const isLockAcquired = acquireLock(id);
+        if (!isLockAcquired) await waitForLock(id);
 
-        // Wait if the lock is already acquired
-        if (!isLockAcquired) {
-          await waitForLock(id);
-        }
+        if (id < 1) throw new Error('Invalid match ID');
 
-        if (id < 1) {
-            return res.status(400).json({ message: 'Invalid match ID' });
-        }
-        // const sqlQuery = 'SELECT * FROM matches WHERE id = ?';
-        
-         try {
-            await getMatchById(id)
-              .then((result) => {
-                match = result
-                console.log('Match details:', result);
-              })
-              .catch((error) => {
-                console.error('Error:', error);
-              });
-           console.log('Match details2 :', match);
-            if (match == null) {
-                return res.status(404).json({ message: 'Match not found' });
-            }
+        // Fetch match details
+        match = await getMatchById(id);
+        if (!match) throw new Error('Match not found');
 
-            // Set color based on userName comparison
-            match.color = match.user_1.toLowerCase() === userName.toLowerCase() ? 'white' : 'black';
+        // Set color based on userName comparison
+        match.color = match.user_1.toLowerCase() === userName.toLowerCase() ? 'white' : 'black';
 
-            // Fetch latest move (call to getLatestMove)
-            await getLastTwoMovesByMatchId(id)
-              .then((moves) => {
-                latestMove1 = moves
-                console.log('Last two moves:', moves);
-              })
-              .catch((error) => {
-                console.error('Error:', error);
-              });
+        // Fetch latest moves
+        latestMove1 = await getLastTwoMovesByMatchId(id);
 
-            console.log('lol  lastr' +userName)
-            const latestMove = await getLatestMove(id, userName, match, latestMove1);
-            //const latestMove = null;
+        // Fetch the latest move and calculate the minutes left
+        const latestMove = await getLatestMove(id, userName, match, latestMove1);
 
-            // Set the match response structure
-            const response = {
-                    "code": 200,
-    "result": "SUCCESS!!",
-    "response":
-                {"match": {
+        // Set up the response structure
+        return {
+            code: 200,
+            result: "SUCCESS!!",
+            response: {
+                match: {
                     id: match.id,
                     userName1: match.user_1,
                     userName2: match.user_2,
-                    status : match.status,
-                    eventId : match.eventId,
+                    status: match.status,
+                    eventId: match.eventId,
                     color: match.color,
                     minuteLeft: latestMove ? latestMove.minuteLeft : MATCH_DURATION_IN_MINUTES / 2,
                     minuteLeft2: latestMove ? latestMove.minuteLeft2 : MATCH_DURATION_IN_MINUTES / 2,
                 },
-                "move": latestMove,
+                move: latestMove,
             }
-            };
-
-            res.json(response);
-        } catch (error) {
-            console.error(error);
-            res.status(500).json({ message: 'Error fetching match' });
-        }
-    } catch (error) {
-        // Handle errors (if any occur during processing)
-        return res.status(500).json({
-            message: 'An error occurred while retrieving the match',
-            error: error.message,
-        });
+        };
     } finally {
-        // Always release the lock after processing is complete
+        // Release the lock after processing is complete
         releaseLock(id);
     }
+}
 
 
 
-});
 
 function queryDatabase(sqlQuery, values) {
   return new Promise((resolve, reject) => {
@@ -606,6 +583,8 @@ io.on('connection', (socket) => {
                 var source = data.source
                 var millitTimeForUserName_1 = 0;
                 var millitTimeForUserName_2 = 0;
+                var matchFinal = null;
+                var movefinal = null;
                 logger.debug(pgn);
                 if (true) {
                   logger.debug('Query is : ');
@@ -624,7 +603,8 @@ io.on('connection', (socket) => {
                                     io.emit(data.matchId, position);
                                 return;
                             } else {
-                                logger.debug(rows1);
+                                logger.debug(rows1[0]);
+                                matchFinal = rows1[0];
                                 if (rows1.length > 0) {
                                     var query = "select * from ?? where matchId = ?  order by id desc limit 2";
                                     var table = ["move", matchId];
@@ -637,6 +617,7 @@ io.on('connection', (socket) => {
                                             return;
                                         } else {
                                             if (rows.length > 0) {
+                                                movefinal = rows;
                                                 var gameStatus = rows[0].status;
                                                 var userNameOfLastMoved = rows[0].userName1;
                                                 var userNameOfCurrentMove = userName1;
@@ -711,11 +692,14 @@ io.on('connection', (socket) => {
                                                 logger.error("DB ERROR ", JSON.stringify(err));
                                             } else {
                                                 connection.commit(function(err) {
+                                                    movefinal = rows;
+                                                    console.log('movefinal')
+                                                    console.log(movefinal[0])
                                                     if (err) {
                                                         connection.rollback(function() {
                                                             logger.error("error rollback for", JSON.stringify(err));
                                                         });
-                                                    } else {
+                                                    } else if(1==2){
                                                         logger.info("successfully made amove");
                                                         logger.info("timestamp" + currentTimeStampInMillis +  "usrname" + userName1 + "status" + status);
                                                         logger.info(JSON.stringify(secondLastMoveForsocket));
@@ -752,6 +736,11 @@ io.on('connection', (socket) => {
                                                             qryString = `UPDATE Move SET status = ? WHERE id = ?`;
                                                             queryDatabase(qryString, [DONE, matchId]);
                                                         }
+                                                    }else if (status == 'CONCLUDED' || status == 'DRAW') {
+                                                        logger.info("calling getLastTwoMovesByMatchId");
+                                                        //getLastTwoMovesByMatchId(matchId);
+                                                        fetchMatchDetails(matchId, userName1);
+
                                                     }
                                                 });
                                             }
