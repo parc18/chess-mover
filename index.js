@@ -4,7 +4,6 @@ const socketIO = require('socket.io');
 const mysql = require('mysql');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
-const cors = require('cors');
 const {
     Chess
 } = require('chess.js')
@@ -81,9 +80,6 @@ const logger = winston.createLogger({
 dotenv.config();
 
 const app = express();
-app.use(cors({
-    origin: 'http://localhost:8080'
-}));
 const server = http.createServer(app);
 const io = socketIO(server);
 
