@@ -176,6 +176,10 @@ app.get('/match/:id', verifyJWT, async (req, res) => {
     }
 });
 
+async function fetchMatchDetails1(id, userName) { 
+await fetchMatchDetails(id, userName);
+}
+
 // Refactored function to handle the main logic of fetching a match by ID and username
 async function fetchMatchDetails(id, userName) {
     let match = null;
@@ -183,8 +187,12 @@ async function fetchMatchDetails(id, userName) {
 
     try {
         // Acquire the lock
-        const isLockAcquired = acquireLock(id);
-        if (!isLockAcquired) await waitForLock(id);
+        let isLockAcquired = await acquireLock(id);
+        while (!isLockAcquired) {
+            console.log('lock wait for ' + userName)
+            await waitForLock(id); // Wait for the lock to be released
+            isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
+        }
 
         if (id < 1) throw new Error('Invalid match ID');
 
@@ -200,7 +208,7 @@ async function fetchMatchDetails(id, userName) {
 
         // Fetch the latest move and calculate the minutes left
         const latestMove = await getLatestMove(id, userName, match, latestMove1);
-
+ releaseLock(id);
         // Set up the response structure
         return {
             code: 200,
@@ -291,7 +299,10 @@ async function getLatestMove(id, userName, match, moves) {
   if (userName && (userName.toLowerCase() === match.user_1.toLowerCase() || userName.toLowerCase() === match.user_2.toLowerCase())) {
     shouldRunGameOverCheck = true;
   }
-
+  console.log(match.winner_user_name_id == '')
+  if(match.winner_user_name_id == '' || match.winner_user_name_id != 'null' || match.winner_user_name_id != null || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
+    shouldRunGameOverCheck = false
+  }
   if (moves.length === 0) return null;
 
   let lastMove = moves[0];
@@ -305,7 +316,7 @@ async function getLatestMove(id, userName, match, moves) {
   }
 
   // Handle case for running moves and conclusion checks
-  handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck);
+  handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck, match);
 
   // if (shouldRunGameOverCheck) {
   //   await isGameOver(lastMove, secondLastMove, lastMove.userName1);
@@ -345,19 +356,32 @@ function handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLast
   }
 }
 
-function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck) {
+function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck, match) {
     logger.info("handleRunningMove CASE RUNNING..!! " + lastMove.userName1);
-  const remainingTime = getAdjustedTime(lastMove);
+    console.log('match');
+    console.log(match);
+    console.log(match.winner_user_name_id);
 
-  if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
-    lastMove.minuteLeft2 = remainingTime;
-    lastMove.minuteLeft = lastMove.remaining_millis;
-  } else {
-    lastMove.minuteLeft2 = lastMove.remaining_millis;
-    lastMove.minuteLeft = remainingTime;
-  }
+    if(match.winner_user_name_id == '' || match.winner_user_name_id != null || match.winner_user_name_id != 'null' || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
+          if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+            lastMove.minuteLeft2 = secondLastMove.remaining_millis;
+            lastMove.minuteLeft = lastMove.remaining_millis;
+          } else {
+            lastMove.minuteLeft2 = lastMove.remaining_millis;
+            lastMove.minuteLeft = secondLastMove.remaining_millis;
+          }
+    }else{
+      const remainingTime = getAdjustedTime(lastMove);
 
-  if ((lastMove.minuteLeft2 <= timesUpsDeltaCheck || lastMove.minuteLeft <= timesUpsDeltaCheck || lastMove.pgn.endsWith('#'))  &&   shouldRunGameOverCheck) {
+      if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+        lastMove.minuteLeft2 = remainingTime;
+        lastMove.minuteLeft = lastMove.remaining_millis;
+      } else {
+        lastMove.minuteLeft2 = lastMove.remaining_millis;
+        lastMove.minuteLeft = remainingTime;
+      }
+    }
+  if ((lastMove.minuteLeft2 <= timesUpsDeltaCheck || lastMove.minuteLeft <= timesUpsDeltaCheck || lastMove.pgn.endsWith('#') || lastMove.status == 'DRAW')  &&   (shouldRunGameOverCheck || match.winner_user_name_id == '' || match.winner_user_name_id != 'null' || match.winner_user_name_id != null)) {
         isGameOver(lastMove, secondLastMove);
   }
 }
@@ -452,12 +476,12 @@ async function isGameOver(lastMove, secondLastMove) {
                         winner = lastMove.remaining_millis > secondLastMove.remaining_millis
                         ? lastMove.userName1
                         : secondLastMove.userName1;
-                        desc = 'D_TIME';
+                        desc = 'DRAW_TIME';
                          let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                         await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
-                        logger.debug(`Match table updated with winner based on E_TIME condition`);
-                        qryString = `UPDATE Move SET status = ? WHERE id = ?`;
-                        await queryDatabase(qryString, [DONE, lastMove.id]);
+                        logger.debug(`Match table updated with winner based on DRAW_TIME condition`);
+                        // qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                        // await queryDatabase(qryString, [DONE, lastMove.id]);
 
                     }else{
                          desc = 'BY_POINT';
@@ -527,6 +551,12 @@ io.on('connection', (socket) => {
 
     socket.on('move', (data) => {
         logger.debug("Move event received: " + JSON.stringify(data));
+
+        let isLockAcquired = acquireLock(data.matchId);
+        while (!isLockAcquired) {
+            waitForLock(id); // Wait for the lock to be released
+            isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
+        }
         const jwtParts = data.auth.split('.');
         const headerInBase64UrlFormat = jwtParts[0];
         payloadInBase64UrlFormat = jwtParts[1];
@@ -555,7 +585,9 @@ io.on('connection', (socket) => {
                 logger.error("Illegal move")
                 position.error = true
                 position.isReload = true
+                releaseLock(data.matchId);
                 io.emit(data.matchId, position);
+                
                 return;
             } else {
                 var userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
@@ -569,6 +601,7 @@ io.on('connection', (socket) => {
                 }
                 if (data.gameOver) {
                     logger.debug('game over');
+                    releaseLock(data.matchId);
                     return;
                 }
                 var userName1 = userName1Obj.sub;
@@ -600,7 +633,9 @@ io.on('connection', (socket) => {
                                 logger.error("Error while connecting to db " + JSON.stringify(err));
                                     position.error = true
                                     position.isReload = true
+                                    releaseLock(matchId);
                                     io.emit(data.matchId, position);
+                                    
                                 return;
                             } else {
                                 logger.debug(rows1[0]);
@@ -614,6 +649,7 @@ io.on('connection', (socket) => {
                                     connection.query(query, function(err, rows) {
                                         if (err) {
                                             logger.error("Error while connecting to db " + JSON.stringify(err));
+                                            eleaseLock(matchId);
                                             return;
                                         } else {
                                             if (rows.length > 0) {
@@ -626,6 +662,7 @@ io.on('connection', (socket) => {
                                                 var matchStartTimeString = rows[0].matchStartTime;
                                                 if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
                                                     position.isReload = true
+                                                    releaseLock(matchId);
                                                     io.emit(data.matchId, position);
                                                     return;
                                                 }
@@ -677,6 +714,7 @@ io.on('connection', (socket) => {
                                             position.isReload = true;
                                             position.millitTimeForUserName_1 = 0;
                                             position.millitTimeForUserName_1 = millitTimeForUserName_1;
+                                            releaseLock(matchId);
                                             io.emit(data.matchId, position);
                                             return;
                                         }
@@ -689,6 +727,7 @@ io.on('connection', (socket) => {
                                         logger.debug(query);
                                         connection.query(query, function(err, rows) {
                                             if (err) {
+                                                 releaseLock(matchId);
                                                 logger.error("DB ERROR ", JSON.stringify(err));
                                             } else {
                                                 connection.commit(function(err) {
@@ -696,9 +735,11 @@ io.on('connection', (socket) => {
                                                     console.log('movefinal')
                                                     console.log(movefinal[0])
                                                     if (err) {
+
                                                         connection.rollback(function() {
                                                             logger.error("error rollback for", JSON.stringify(err));
                                                         });
+                                                        releaseLock(matchId);
                                                     } else if(1==2){
                                                         logger.info("successfully made amove");
                                                         logger.info("timestamp" + currentTimeStampInMillis +  "usrname" + userName1 + "status" + status);
@@ -736,11 +777,12 @@ io.on('connection', (socket) => {
                                                             qryString = `UPDATE Move SET status = ? WHERE id = ?`;
                                                             queryDatabase(qryString, [DONE, matchId]);
                                                         }
+                                                        releaseLock(matchId);
                                                     }else if (status == 'CONCLUDED' || status == 'DRAW') {
                                                         logger.info("calling getLastTwoMovesByMatchId");
                                                         //getLastTwoMovesByMatchId(matchId);
-                                                        fetchMatchDetails(matchId, userName1);
-
+                                                        fetchMatchDetails1(matchId, userName1);
+                                                        releaseLock(matchId);
                                                     }
                                                 });
                                             }
@@ -753,6 +795,7 @@ io.on('connection', (socket) => {
                                         // Broadcast the move event to all connected clients
                                         position.millitTimeForUserName_1 = millitTimeForUserName_1;
                                         position.millitTimeForUserName_2 = millitTimeForUserName_2;
+                                        releaseLock(matchId);
                                         io.emit(data.matchId, position);
                                     });
 
