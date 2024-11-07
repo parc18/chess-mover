@@ -84,18 +84,18 @@ const server = http.createServer(app);
 const io = socketIO(server);
 
 const db = mysql.createConnection({
- host: 'frwahxxknm9kwy6c.cbetxkdyhwsb.us-east-1.rds.amazonaws.com',
- user: 'zbfqsjvz5tc7tw6w',
- password: 'erao2uf5u1ergafr',
- database: 'c47wfg96agk0rjr7'
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
 });
 
 var connection;
 var db_config = {
- host: 'frwahxxknm9kwy6c.cbetxkdyhwsb.us-east-1.rds.amazonaws.com',
- user: 'zbfqsjvz5tc7tw6w',
- password: 'erao2uf5u1ergafr',
- database: 'c47wfg96agk0rjr7'
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
 };
 
 

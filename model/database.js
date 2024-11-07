@@ -2,8 +2,8 @@
 const { Sequelize } = require('sequelize');
 //const sequelize= null;
 // Initialize Sequelize with your database configuration
-const sequelize = new Sequelize('c47wfg96agk0rjr7', 'zbfqsjvz5tc7tw6w', 'erao2uf5u1ergafr', {
-    host: 'rwahxxknm9kwy6c.cbetxkdyhwsb.us-east-1.rds.amazonaws.com', // Your database host
+const sequelize = new Sequelize(process.env.DB_DATABASE, process.env.DB_USER, process.env.DB_PASSWORD, {
+    host: process.env.DB_HOST, // Your database host
     dialect: 'mysql',  // Your database dialect (e.g., mysql, postgres, sqlite, etc.)
 });
 
