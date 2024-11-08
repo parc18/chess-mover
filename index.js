@@ -370,6 +370,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
     logger.info("handleRunningMove CASE RUNNING..!! " + lastMove.userName1);
 
     if(match.winner_user_name_id == '' || match.winner_user_name_id != null || match.winner_user_name_id != 'null' || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
+        logger.info("handleRunningMove winner got RUNNING..!! " + match.winner_user_name_id);
         if(isNullOrUndefinedOrEmpty(secondLastMove)){
               if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
                 lastMove.minuteLeft2 = 0;
