@@ -357,7 +357,15 @@ function handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLast
         isGameOver(lastMove, secondLastMove);
   }
 }
-
+function isNullOrUndefinedOrEmpty(value) {
+  return (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim() === '') || // empty string
+    (Array.isArray(value) && value.length === 0) ||       // empty array
+    (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) // empty object
+  );
+}
 function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck, match) {
     logger.info("handleRunningMove CASE RUNNING..!! " + lastMove.userName1);
     console.log('match');
@@ -365,13 +373,23 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
     console.log(match.winner_user_name_id);
 
     if(match.winner_user_name_id == '' || match.winner_user_name_id != null || match.winner_user_name_id != 'null' || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
-          if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
-            lastMove.minuteLeft2 = secondLastMove.remaining_millis;
-            lastMove.minuteLeft = lastMove.remaining_millis;
-          } else {
-            lastMove.minuteLeft2 = lastMove.remaining_millis;
-            lastMove.minuteLeft = secondLastMove.remaining_millis;
-          }
+        if(isNullOrUndefinedOrEmpty(secondLastMove)){
+              if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+                lastMove.minuteLeft2 = 0;
+                lastMove.minuteLeft = lastMove.remaining_millis;
+              } else {
+                lastMove.minuteLeft2 = lastMove.remaining_millis;
+                lastMove.minuteLeft = 0;
+              }
+        }else{
+              if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+                lastMove.minuteLeft2 = secondLastMove.remaining_millis;
+                lastMove.minuteLeft = lastMove.remaining_millis;
+              } else {
+                lastMove.minuteLeft2 = lastMove.remaining_millis;
+                lastMove.minuteLeft = secondLastMove.remaining_millis;
+              }
+        }
     }else{
       const remainingTime = getAdjustedTime(lastMove);
 
