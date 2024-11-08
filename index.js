@@ -381,7 +381,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                 lastMove.minuteLeft2 = lastMove.remaining_millis;
                 lastMove.minuteLeft = 0;
               }
-        }else{
+        }else if(lastMove.status == 'DRAW'){
               if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
                 lastMove.minuteLeft2 = secondLastMove.remaining_millis;
                 lastMove.minuteLeft = lastMove.remaining_millis;
@@ -389,6 +389,16 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                 lastMove.minuteLeft2 = lastMove.remaining_millis;
                 lastMove.minuteLeft = secondLastMove.remaining_millis;
               }
+        } else {
+                  const remainingTime = getAdjustedTime(lastMove);
+                  if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
+                    lastMove.minuteLeft2 = remainingTime;
+                    lastMove.minuteLeft = lastMove.remaining_millis;
+                  } else {
+                    lastMove.minuteLeft2 = lastMove.remaining_millis;
+                    lastMove.minuteLeft = remainingTime;
+                  }
+                }
         }
     }else{
       const remainingTime = getAdjustedTime(lastMove);
