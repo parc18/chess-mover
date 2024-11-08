@@ -11,7 +11,7 @@ const base64 = require('base64url');
 const winston = require('winston');
 const cors = require('cors');
 // const Match = require('./model/Match');
-// const Move = require('./model/Move');
+// const move = require('./model/move');
 const { acquireLock, releaseLock, waitForLock } = require('./lockManager'); // Import the lock functions
 const lock = {};
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -329,7 +329,7 @@ async function getLatestMove(id, userName, match, moves) {
 
 async function getLastTwoMovesByMatchId(matchId) {
   const sqlQuery = `
-    SELECT * FROM Move
+    SELECT * FROM move
     WHERE matchId = ?
     ORDER BY id DESC
     LIMIT 2;
@@ -430,9 +430,9 @@ async function isGameOver(lastMove, secondLastMove) {
                 let desc = 'BLACK_EMPTY_MOVE_FOR_NO_SHOW';
                 let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                 await queryDatabase(qryString, [lastMove.userName1, desc, lastMove.matchId]);
-                qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                qryString = `UPDATE move SET status = ? WHERE id = ?`;
                 await queryDatabase(qryString, [DONE, lastMove.id]);
-                logger.debug(`Match and Move tables updated for BLACK_EMPTY_MOVE_FOR_NO_SHOW and user ${lastMove.userName1} and matchid ${lastMove.matchId}`);
+                logger.debug(`Match and move tables updated for BLACK_EMPTY_MOVE_FOR_NO_SHOW and user ${lastMove.userName1} and matchid ${lastMove.matchId}`);
                 return;
             }
 
@@ -447,7 +447,7 @@ async function isGameOver(lastMove, secondLastMove) {
 
                 let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                 await queryDatabase(qryString, [lastMove.userName1, desc, lastMove.matchId]);
-                qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                qryString = `UPDATE move SET status = ? WHERE id = ?`;
                 await queryDatabase(qryString, [DONE, lastMove.id]);
                 logger.debug(`Match table updated for CONCLUDED or DRAW with winner ${lastMove.userName1} user ${lastMove.userName1} and matchid ${lastMove.matchId}`);
             } else {
@@ -460,7 +460,7 @@ async function isGameOver(lastMove, secondLastMove) {
                     let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                     await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
                     logger.debug(`Match table updated with winner based on E_TIME condition`);
-                    qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                    qryString = `UPDATE move SET status = ? WHERE id = ?`;
                     await queryDatabase(qryString, [DONE, lastMove.id]);
                 }else if (lastMove.status != 'DRAW') {
                     
@@ -470,7 +470,7 @@ async function isGameOver(lastMove, secondLastMove) {
                     let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                     await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
                     logger.debug(`Match table updated with winner based on D_TIME condition`);
-                    qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                    qryString = `UPDATE move SET status = ? WHERE id = ?`;
                     await queryDatabase(qryString, [DONE, lastMove.id]);
                 } else if (lastMove.status == 'DRAW') {
 
@@ -482,7 +482,7 @@ async function isGameOver(lastMove, secondLastMove) {
                          let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                         await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
                         logger.debug(`Match table updated with winner based on DRAW_TIME condition`);
-                        // qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                        // qryString = `UPDATE move SET status = ? WHERE id = ?`;
                         // await queryDatabase(qryString, [DONE, lastMove.id]);
 
                     }else{
@@ -492,7 +492,7 @@ async function isGameOver(lastMove, secondLastMove) {
                         let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
                         await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
                         logger.debug(`Match table updated for BY_POINT`);
-                        qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                        qryString = `UPDATE move SET status = ? WHERE id = ?`;
                         await queryDatabase(qryString, [DONE, lastMove.id]);
                     }
                     // Determine the winner based on other game logic (e.g., by point)
@@ -552,7 +552,7 @@ io.on('connection', (socket) => {
     logger.info('connection estabished');
 
     socket.on('move', (data) => {
-        logger.debug("Move event received: " + JSON.stringify(data));
+        logger.debug("move event received: " + JSON.stringify(data));
 
         let isLockAcquired = acquireLock(data.matchId);
         while (!isLockAcquired) {
@@ -776,7 +776,7 @@ io.on('connection', (socket) => {
                                                                     logger.debug(`Match table updated for COLOR BY_COLOR ${matchId} and user ${userName2}`);
                                                                 }
                                                             }
-                                                            qryString = `UPDATE Move SET status = ? WHERE id = ?`;
+                                                            qryString = `UPDATE move SET status = ? WHERE id = ?`;
                                                             queryDatabase(qryString, [DONE, matchId]);
                                                         }
                                                         releaseLock(matchId);
