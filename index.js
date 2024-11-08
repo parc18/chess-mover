@@ -10,8 +10,8 @@ const {
 const base64 = require('base64url');
 const winston = require('winston');
 const cors = require('cors');
-const Match = require('./model/Match');
-const Move = require('./model/Move');
+// const Match = require('./model/Match');
+// const Move = require('./model/Move');
 const { acquireLock, releaseLock, waitForLock } = require('./lockManager'); // Import the lock functions
 const lock = {};
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
