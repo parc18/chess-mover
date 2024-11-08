@@ -398,7 +398,6 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                     lastMove.minuteLeft2 = lastMove.remaining_millis;
                     lastMove.minuteLeft = remainingTime;
                   }
-                }
         }
     }else{
       const remainingTime = getAdjustedTime(lastMove);
