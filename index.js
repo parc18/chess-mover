@@ -191,7 +191,7 @@ async function fetchMatchDetails(id, userName) {
         // Acquire the lock
         let isLockAcquired = await acquireLock(id);
         while (!isLockAcquired) {
-            console.log('lock wait for ' + userName)
+            logger.info('lock wait for ' + userName)
             await waitForLock(id); // Wait for the lock to be released
             isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
         }
@@ -272,11 +272,11 @@ function verifyJWT(req, res, next) {
     const jwtParts = token.split('.');
     //const headerInBase64UrlFormat = jwtParts[0];
     payloadInBase64UrlFormat = jwtParts[1];
-    console.log('hell yeah  '+payloadInBase64UrlFormat)
+    logger.info('hell yeah  '+payloadInBase64UrlFormat)
     // const signatureInBase64UrlFormat = jwtParts[2];
     var userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
 
-    //console.log('hell yeah 2 '+JSON.parse(base64.decode(payloadInBase64UrlFormat)))
+    //logger.info('hell yeah 2 '+JSON.parse(base64.decode(payloadInBase64UrlFormat)))
 
 
     
@@ -289,7 +289,7 @@ function verifyJWT(req, res, next) {
             return res.status(403).json({ message: 'Invalid or expired token' });
         }
          logger.info("JWT USER ", JSON.stringify(userName1Obj));
-             console.log('hell yeah  3 '+userName1Obj.sub)
+             logger.info('hell yeah  3 '+userName1Obj.sub)
 
         req.user = userName1Obj.sub; // attach the decoded user information to the request object
         next();
@@ -301,7 +301,7 @@ async function getLatestMove(id, userName, match, moves) {
   if (userName && (userName.toLowerCase() === match.user_1.toLowerCase() || userName.toLowerCase() === match.user_2.toLowerCase())) {
     shouldRunGameOverCheck = true;
   }
-  console.log(match.winner_user_name_id == '')
+
   if(match.winner_user_name_id == '' || match.winner_user_name_id != 'null' || match.winner_user_name_id != null || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
     shouldRunGameOverCheck = false
   }
@@ -347,10 +347,10 @@ async function getLastTwoMovesByMatchId(matchId) {
 function handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLastMove) {
   if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
     lastMove.minuteLeft = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-    lastMove.minuteLeft2 = getAdjustedTime(lastMove);
+    lastMove.minuteLeft2 = getAdjustedTime(lastMove, null);
   } else {
     lastMove.minuteLeft2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-    lastMove.minuteLeft = getAdjustedTime(lastMove);
+    lastMove.minuteLeft = getAdjustedTime(lastMove, null);
   }
 
   if ((lastMove.minuteLeft2 <= timesUpsDeltaCheck || lastMove.minuteLeft <= timesUpsDeltaCheck || lastMove.pgn.endsWith('#'))  &&  shouldRunGameOverCheck) {
@@ -368,9 +368,6 @@ function isNullOrUndefinedOrEmpty(value) {
 }
 function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck, match) {
     logger.info("handleRunningMove CASE RUNNING..!! " + lastMove.userName1);
-    console.log('match');
-    console.log(match);
-    console.log(match.winner_user_name_id);
 
     if(match.winner_user_name_id == '' || match.winner_user_name_id != null || match.winner_user_name_id != 'null' || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
         if(isNullOrUndefinedOrEmpty(secondLastMove)){
@@ -390,7 +387,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                 lastMove.minuteLeft = secondLastMove.remaining_millis;
               }
         } else {
-                  const remainingTime = getAdjustedTime(lastMove);
+                  const remainingTime = getAdjustedTime(lastMove, secondLastMove);
                   if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
                     lastMove.minuteLeft2 = remainingTime;
                     lastMove.minuteLeft = lastMove.remaining_millis;
@@ -400,7 +397,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                   }
         }
     }else{
-      const remainingTime = getAdjustedTime(lastMove);
+      const remainingTime = getAdjustedTime(lastMove, secondLastMove);
 
       if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
         lastMove.minuteLeft2 = remainingTime;
@@ -415,33 +412,17 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
   }
 }
 
-function getAdjustedTime(move) {
+function getAdjustedTime(move, secondLastMove) {
     logger.info("getAdjustedTime for userName1 " + move.userName1 + " with Date.now() is " + Date.now() + " and move.currentTimeStampInMillis is " + move.current_move_time_millis.getMilliseconds());
-let moveTimeUTC = new Date(move.current_move_time_millis);
-let moveTimeIST = new Date(moveTimeUTC.getTime() + (5 * 60 + 30) * 60 * 1000);  // Add 5 hours and 30 minutes
-logger.info(Date.now());
-    logger.info(moveTimeIST.getTime());
-   // logger.info(moveTimeUTC+UTC_ADD_UP);
-    logger.info("LOL");
+    let moveTimeUTC = new Date(move.current_move_time_millis);
+    let moveTimeIST = new Date(moveTimeUTC.getTime() + (5 * 60 + 30) * 60 * 1000);  // Add 5 hours and 30 minutes
 
-// const adjustedTime = new Date(Date.now()).toLocaleString("en-GB", { hour12: false });
-// const moveTime = new Date(move.current_move_time_millis).toLocaleString("en-GB", { hour12: false });
-
-// logger.info(`getAdjustedTime for userName1 ${move.userName1} with Date.now() is ${adjustedTime} and move.currentTimeStampInMillis is ${moveTime}`);
-const adjustedTime = new Date(Date.now()).toLocaleString("en-GB", { hour12: false });
-
-// Manually convert UTC timestamp to IST
- moveTimeUTC = new Date(move.current_move_time_millis);
- moveTimeIST = new Date(moveTimeUTC.getTime() + (5 * 60 + 30) * 60 * 1000);  // Add 5 hours 30 minutes in milliseconds
-
-// Format the IST time manually to "YYYY-MM-DD HH:MM:SS"
-const formattedMoveTimeIST = moveTimeIST.toISOString().replace('T', ' ').substring(0, 19);
-
-//logger.info(`getAdjustedTime for userName1 ${move.userName1} with Date.now() is ${adjustedTime} and move.currentTimeStampInMillis in IST is ${formattedMoveTimeIST}`);
-    logger.info(Date.now() - moveTimeIST.getTime());
-     logger.info("LOL2");
-    logger.info(REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND / 2);
+    logger.info("inside getAdjustedTime");
     let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeIST.getTime());
+    if(!isNullOrUndefinedOrEmpty(secondLastMove)) {
+        logger.info("inside getAdjustedTime more than one move i e second move found");
+        getAdjustedTime = secondLastMove.remaining_millis - (Date.now() - moveTimeIST.getTime());
+    }
     logger.info("returning getAdjustedTime " + getAdjustedTime + " for userName1 " + move.userName1);
     return getAdjustedTime < 0 ? 0 : getAdjustedTime;
 }
@@ -761,8 +742,7 @@ io.on('connection', (socket) => {
                                             } else {
                                                 connection.commit(function(err) {
                                                     movefinal = rows;
-                                                    console.log('movefinal')
-                                                    console.log(movefinal[0])
+                                                    logger.error("Error for insert into move", JSON.stringify(err))
                                                     if (err) {
 
                                                         connection.rollback(function() {
