@@ -369,7 +369,7 @@ function isNullOrUndefinedOrEmpty(value) {
 function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOverCheck, match) {
     logger.info("handleRunningMove CASE RUNNING..!! " + lastMove.userName1);
 
-    if(match.winner_user_name_id == '' || match.winner_user_name_id != null || match.winner_user_name_id != 'null' || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
+    if(match.winner_user_name_id != null && match.winner_user_name_id != 'null') {
         logger.info("handleRunningMove winner got RUNNING..!! " + match.winner_user_name_id);
         if(isNullOrUndefinedOrEmpty(secondLastMove)){
               if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
