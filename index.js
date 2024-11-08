@@ -302,7 +302,7 @@ async function getLatestMove(id, userName, match, moves) {
     shouldRunGameOverCheck = true;
   }
 
-  if(match.winner_user_name_id == '' || match.winner_user_name_id != 'null' || match.winner_user_name_id != null || match.winner_user_name_id != undefined || match.winner_user_name_id != 'undefined') {
+  if(match.winner_user_name_id != 'null' || match.winner_user_name_id != null) {
     shouldRunGameOverCheck = false
   }
   if (moves.length === 0) return null;
