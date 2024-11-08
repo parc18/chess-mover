@@ -378,7 +378,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                 lastMove.minuteLeft2 = lastMove.remaining_millis;
                 lastMove.minuteLeft = 0;
               }
-        }else if(lastMove.status == 'DRAW'){
+        }else if(lastMove.status == 'DRAW' || lastMove.pgn.endsWith('#')){
               if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
                 lastMove.minuteLeft2 = secondLastMove.remaining_millis;
                 lastMove.minuteLeft = lastMove.remaining_millis;
