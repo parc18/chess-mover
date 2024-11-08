@@ -9,6 +9,7 @@ const {
 } = require('chess.js')
 const base64 = require('base64url');
 const winston = require('winston');
+const cors = require('cors');
 const Match = require('./model/Match');
 const Move = require('./model/Move');
 const { acquireLock, releaseLock, waitForLock } = require('./lockManager'); // Import the lock functions
@@ -80,6 +81,11 @@ const logger = winston.createLogger({
 dotenv.config();
 
 const app = express();
+app.use(cors({
+  origin: ['https://32chess.com', 'https://www.32chess.com'],
+  methods: 'GET',
+  credentials: true,
+}));
 const server = http.createServer(app);
 const io = socketIO(server);
 
