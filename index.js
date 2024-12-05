@@ -196,7 +196,8 @@ async function fetchMatchDetails(id, userName) {
             isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
         }
 
-        if (id < 1) throw new Error('Invalid match ID');
+
+        if (id < 1 || !isLockAcquired) throw new Error('Invalid match ID');
 
         // Fetch match details
         match = await getMatchById(id);
@@ -210,7 +211,7 @@ async function fetchMatchDetails(id, userName) {
 
         // Fetch the latest move and calculate the minutes left
         const latestMove = await getLatestMove(id, userName, match, latestMove1);
- releaseLock(id);
+        releaseLock(id);
         // Set up the response structure
         return {
             code: 200,
