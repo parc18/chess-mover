@@ -565,7 +565,7 @@ io.on('connection', (socket) => {
         logger.debug("move event received: " + JSON.stringify(data));
 
         let isLockAcquired = acquireLock(data.matchId);
-        while (!isLockAcquired) {
+        if (!isLockAcquired) {
             waitForLock(data.matchId); // Wait for the lock to be released
             isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
         }
