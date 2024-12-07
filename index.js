@@ -24,7 +24,7 @@ const BLACK_EMPTY_MOVE_FOR_NO_SHOW = 'EMPTY_MOVE';
 let REMAINING_TIME_WHITE_IN_SECONDS = (MATCH_DURATION_IN_MINUTES * 60) / 2;
 let REMAINING_TIME_BLACK_IN_SECONDS = (MATCH_DURATION_IN_MINUTES * 60) / 2;
 const RUNNING = 'RUNNING';
-const timesUpsDeltaCheck = 100;
+const timesUpsDeltaCheck = 0;
 const DONE = 'DONE';
 const UTC_ADD_UP = 19800000;
 
@@ -190,7 +190,7 @@ async function fetchMatchDetails(id, userName) {
     try {
         // Acquire the lock
         let isLockAcquired = await acquireLock(id);
-        while (!isLockAcquired) {
+        if (!isLockAcquired) {
             logger.info('lock wait for ' + userName)
             await waitForLock(id); // Wait for the lock to be released
             isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
@@ -566,7 +566,7 @@ io.on('connection', (socket) => {
 
         let isLockAcquired = acquireLock(data.matchId);
         while (!isLockAcquired) {
-            waitForLock(id); // Wait for the lock to be released
+            waitForLock(data.matchId); // Wait for the lock to be released
             isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
         }
         const jwtParts = data.auth.split('.');
@@ -721,10 +721,10 @@ io.on('connection', (socket) => {
 
                                             }
                                         }
-                                        if (remaining_millis <= 100) {
+                                        if (remaining_millis <= 0) {
                                             position.gameOver = true;
                                             position.isReload = true;
-                                            position.millitTimeForUserName_1 = 0;
+                                            //position.millitTimeForUserName_1 = 0;
                                             position.millitTimeForUserName_1 = millitTimeForUserName_1;
                                             releaseLock(matchId);
                                             io.emit(data.matchId, position);
@@ -798,7 +798,7 @@ io.on('connection', (socket) => {
                                                 });
                                             }
                                         })
-                                        if (remaining_millis < 100) {
+                                        if (remaining_millis < 0) {
                                             position.gameOver = true
                                         } else {
                                             position.gameOver = false
