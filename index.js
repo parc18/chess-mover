@@ -196,8 +196,10 @@ async function fetchMatchDetails(id, userName) {
             isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
         }
 
+        logger.info('match id for user ' + userName +"match id"+ id);
+        logger.info("lock acquireLock " + isLockAcquired)
 
-        if (id < 1 || !isLockAcquired) throw new Error('Invalid match ID');
+        if (id < 1) throw new Error('Invalid match ID');
 
         // Fetch match details
         match = await getMatchById(id);
