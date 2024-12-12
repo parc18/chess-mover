@@ -199,7 +199,16 @@ async function fetchMatchDetails(id, userName) {
         logger.info('match id for user ' + userName +"match id"+ id);
         logger.info("lock acquireLock " + isLockAcquired)
 
-        if (id < 1) throw new Error('Invalid match ID');
+        if (id < 1) {
+            return {
+                code: 200,
+                result: "SUCCESS!!",
+                response: {
+                    match: null,
+                    move: null,
+                }
+            };
+        }
 
         // Fetch match details
         match = await getMatchById(id);
