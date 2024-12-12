@@ -13,6 +13,7 @@ const cors = require('cors');
 // const Match = require('./model/Match');
 // const move = require('./model/move');
 const { acquireLock, releaseLock, waitForLock } = require('./lockManager'); // Import the lock functions
+const ResourceFairLock = require('./ResourceFairLock');
 const lock = {};
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 var MATCH_DURATION_IN_MINUTES = 6;
@@ -28,6 +29,7 @@ const timesUpsDeltaCheck = 0;
 const DONE = 'DONE';
 const UTC_ADD_UP = 19800000;
 
+const fairLock = new ResourceFairLock();
 
 //############################################################################################
 //########################### LOGGER  STARTS #################################################
@@ -563,14 +565,15 @@ function colorOfWinner(fen) {
 io.on('connection', (socket) => {
     logger.info('connection estabished');
 
-    socket.on('move', (data) => {
+    socket.on('move', async (data) => {
         logger.debug("move event received: " + JSON.stringify(data));
 
-        let isLockAcquired = acquireLock(data.matchId);
-        if (!isLockAcquired) {
-            waitForLock(data.matchId); // Wait for the lock to be released
-            isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
-        }
+        // let isLockAcquired = acquireLock(data.matchId);
+        // if (!isLockAcquired) {
+        //     waitForLock(data.matchId); // Wait for the lock to be released
+        //     isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
+        // }
+        const release = await fairLock.acquire(resourceId, timeout);
         const jwtParts = data.auth.split('.');
         const headerInBase64UrlFormat = jwtParts[0];
         payloadInBase64UrlFormat = jwtParts[1];
@@ -647,7 +650,7 @@ io.on('connection', (socket) => {
                                 logger.error("Error while connecting to db " + JSON.stringify(err));
                                     position.error = true
                                     position.isReload = true
-                                    releaseLock(matchId);
+                                    release();
                                     io.emit(data.matchId, position);
                                     
                                 return;
@@ -676,7 +679,8 @@ io.on('connection', (socket) => {
                                                 var matchStartTimeString = rows[0].matchStartTime;
                                                 if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
                                                     position.isReload = true
-                                                    releaseLock(matchId);
+                                                    //releaseLock(matchId);
+                                                    release();
                                                     io.emit(data.matchId, position);
                                                     return;
                                                 }
@@ -728,7 +732,8 @@ io.on('connection', (socket) => {
                                             position.isReload = true;
                                             //position.millitTimeForUserName_1 = 0;
                                             position.millitTimeForUserName_1 = millitTimeForUserName_1;
-                                            releaseLock(matchId);
+                                            //releaseLock(matchId);
+                                            release();
                                             io.emit(data.matchId, position);
                                             return;
                                         }
@@ -741,18 +746,18 @@ io.on('connection', (socket) => {
                                         logger.debug(query);
                                         connection.query(query, function(err, rows) {
                                             if (err) {
-                                                 releaseLock(matchId);
+                                                release();
                                                 logger.error("DB ERROR ", JSON.stringify(err));
                                             } else {
                                                 connection.commit(function(err) {
                                                     movefinal = rows;
-                                                    logger.error("Error for insert into move", JSON.stringify(err))
+                                                    logger.error("inserting into move", JSON.stringify(err))
                                                     if (err) {
-
                                                         connection.rollback(function() {
                                                             logger.error("error rollback for", JSON.stringify(err));
+                                                            release();
                                                         });
-                                                        releaseLock(matchId);
+                                                        //releaseLock(matchId);
                                                     } else if(1==2){
                                                         logger.info("successfully made amove");
                                                         logger.info("timestamp" + currentTimeStampInMillis +  "usrname" + userName1 + "status" + status);
@@ -790,12 +795,12 @@ io.on('connection', (socket) => {
                                                             qryString = `UPDATE move SET status = ? WHERE id = ?`;
                                                             queryDatabase(qryString, [DONE, matchId]);
                                                         }
-                                                        releaseLock(matchId);
+                                                        release();
                                                     }else if (status == 'CONCLUDED' || status == 'DRAW') {
                                                         logger.info("calling getLastTwoMovesByMatchId");
                                                         //getLastTwoMovesByMatchId(matchId);
                                                         fetchMatchDetails1(matchId, userName1);
-                                                        releaseLock(matchId);
+                                                        release();
                                                     }
                                                 });
                                             }
@@ -808,7 +813,7 @@ io.on('connection', (socket) => {
                                         // Broadcast the move event to all connected clients
                                         position.millitTimeForUserName_1 = millitTimeForUserName_1;
                                         position.millitTimeForUserName_2 = millitTimeForUserName_2;
-                                        releaseLock(matchId);
+                                        release();
                                         io.emit(data.matchId, position);
                                     });
 
@@ -822,9 +827,6 @@ io.on('connection', (socket) => {
                     });
                 }
             }
-
-
-
 
         } else {
             // Token is invalid, handle accordingly (e.g., emit an error event)
