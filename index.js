@@ -40,39 +40,8 @@ const path = require('path')
 const ONE = 1;
 const logFormat = format.printf(info => `${info.timestamp} ${info.level} [${info.label}]: ${info.message}`)
 
-const logger = winston.createLogger({
-    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-    format: format.combine(
-        format.label({
-            label: path.basename(process.mainModule.filename)
-        }),
-        format.timestamp({
-            format: 'YYYY-MM-DD HH:mm:ss'
-        }),
-        // Format the metadata object
-        format.metadata({
-            fillExcept: ['message', 'level', 'timestamp', 'label']
-        })
-    ),
-    transports: [
-        new transports.Console({
-            format: format.combine(
-                format.colorize(),
-                logFormat
-            )
-        }),
-        new transports.File({
-            filename: 'logs/combined.log',
-            format: format.combine(
-                // Render in one line in your log file.
-                // If you use prettyPrint() here it will be really
-                // difficult to exploit your logs files afterwards.
-                format.json()
-            )
-        })
-    ],
-    exitOnError: false
-})
+const logger = require('./logger_config');
+
 //############################################################################################
 //########################### LOGGER  ENDS #################################################
 
@@ -97,46 +66,43 @@ const db = mysql.createConnection({
 });
 
 var connection;
-var db_config = {
+// Database configuration
+const db_config = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
+  connectionLimit: 40, // Maximum number of connections in the pool
 };
 
+// Create a connection pool
+const pool = mysql.createPool(db_config);
 
 function handleDisconnect() {
-    connection = mysql.createConnection(db_config); // Recreate the connection, since
-    // the old one cannot be reused.
+  pool.on('acquire', (connection) => {
+    logger.info(`Connection ${connection.threadId} acquired`);
+  });
 
-    connection.connect(function(err) { // The server is either down
-        if (err) { // or restarting (takes a while sometimes).
-            logger.error('error when connecting to db:', JSON.stringify(err));
-            setTimeout(handleDisconnect, 2000); // We introduce a delay before attempting to reconnect,
-        } // to avoid a hot loop, and to allow our node script to
-    }); // process asynchronous requests in the meantime.
-    // If you're also serving http, display a 503 error.
-    connection.on('error', function(err) {
-        logger.error('db error', JSON.stringify(err));
-        if (err.code === 'PROTOCOL_CONNECTION_LOST') { // Connection to the MySQL server is usually
-            handleDisconnect(); // lost due to either server restart, or a
-        } else { // connnection idle timeout (the wait_timeout
-            throw err; // server variable configures this)
-        }
-    });
-}
-handleDisconnect();
+  pool.on('release', (connection) => {
+    logger.info(`Connection ${connection.threadId} released`);
+  });
 
+  pool.on('error', (err) => {
+    logger.error('Database error:', err.code);
 
-
-// Connect to the database
-db.connect((err) => {
-    if (err) {
-        logger.error("Error connecting to Error connecting to MySQL database:", JSON.stringify(err));
-        return;
+    // If the error is recoverable, reconnect
+    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+      logger.warn('Recreating the connection pool due to lost connection...');
+      pool.end(() => {
+        pool = mysql.createPool(db_config); // Recreate the pool
+        handleDisconnect();
+      });
+    } else {
+      throw err; // Unexpected errors should still be thrown
     }
-    logger.info("Connected to MySQL database");
-});
+  });
+}
+
 
 // Middleware function to validate JWT token
 const authenticateToken = (token) => {
@@ -570,275 +536,114 @@ function colorOfWinner(fen) {
 
 
 io.on('connection', (socket) => {
-    logger.info('connection estabished');
+    logger.info('Connection established');
 
-    socket.on('move', (data) => {
-        logger.debug("move event received: " + JSON.stringify(data));
+    socket.on('move', async (data) => {
+        logger.debug("Move event received: " + JSON.stringify(data));
 
         let isLockAcquired = acquireLock(data.matchId);
         if (!isLockAcquired) {
-            waitForLock(data.matchId); // Wait for the lock to be released
+            await waitForLock(data.matchId); // Wait for the lock to be released
             isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
         }
+
         const jwtParts = data.auth.split('.');
-        const headerInBase64UrlFormat = jwtParts[0];
-        payloadInBase64UrlFormat = jwtParts[1];
-        const signatureInBase64UrlFormat = jwtParts[2];
-        let secondLastMoveForsocket = null;
+        const payloadInBase64UrlFormat = jwtParts[1];
 
         // Validate JWT token
         const tokenData = authenticateToken(data.auth);
 
-        if (tokenData) {
-            // Token is valid, handle the move event logic here
-            logger.info('User authenticated!!!');
-
-            // VALIDATE THE SECRET LATER
-            position = data;
-            position.userName1 = null;
-            var game = new Chess(data.prevFen);
-            const move = game.move({
-                from: data.source,
-                to: data.target,
-                promotion: 'q' // NOTE: always promote to a queen for example simplicity
-            })
-
-            // illegal move
-            if (move === null) {
-                logger.error("Illegal move")
-                position.error = true
-                position.isReload = true
-                releaseLock(data.matchId);
-                io.emit(data.matchId, position);
-                
-                return;
-            } else {
-                var userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
-                game = new Chess(data.fen);
-                if (game.in_checkmate()) {
-                    status = 'CONCLUDED'
-                } else if (game.in_draw()) {
-                    status = 'DRAW'
-                } else {
-                    status = RUNNING
-                }
-                if (data.gameOver) {
-                    logger.debug('game over');
-                    releaseLock(data.matchId);
-                    return;
-                }
-                var userName1 = userName1Obj.sub;
-                position.userName1 = userName1;
-                var userName2 = "";
-                var eventId = '';
-                var matchId = data.matchId;
-                var challengeId = '';
-                var pgn = data.pgn;
-                var fen = data.fen;
-                var target = data.target
-                var source = data.source
-                var millitTimeForUserName_1 = 0;
-                var millitTimeForUserName_2 = 0;
-                var matchFinal = null;
-                var movefinal = null;
-                logger.debug(pgn);
-                if (true) {
-                  logger.debug('Query is : ');
-                    connection.beginTransaction(function(err) {
-
-                        const query1 = "SELECT * FROM ?? WHERE id = ? AND (user_1 = ? OR user_2 = ?)";
-                        const table1 = ["matches", matchId, userName1, userName1];
-                        const formattedQuery1 = mysql.format(query1, table1);
-                        logger.debug('Query is : ');
-                        logger.debug(formattedQuery1);
-                        connection.query(formattedQuery1, function(err, rows1) {
-                            if (err) {
-                                logger.error("Error while connecting to db " + JSON.stringify(err));
-                                    position.error = true
-                                    position.isReload = true
-                                    releaseLock(matchId);
-                                    io.emit(data.matchId, position);
-                                    
-                                return;
-                            } else {
-                                logger.debug(rows1[0]);
-                                matchFinal = rows1[0];
-                                if (rows1.length > 0) {
-                                    var query = "select * from ?? where matchId = ?  order by id desc limit 2";
-                                    var table = ["move", matchId];
-                                    query = mysql.format(query, table);
-                                    var currentTimeStampInMillis = new Date().getTime();
-                                    let remaining_millis = 0;
-                                    connection.query(query, function(err, rows) {
-                                        if (err) {
-                                            logger.error("Error while connecting to db " + JSON.stringify(err));
-                                            eleaseLock(matchId);
-                                            return;
-                                        } else {
-                                            if (rows.length > 0) {
-                                                movefinal = rows;
-                                                var gameStatus = rows[0].status;
-                                                var userNameOfLastMoved = rows[0].userName1;
-                                                var userNameOfCurrentMove = userName1;
-                                                var totalMovesMadeSoFarInGame = rows.length;
-                                                //createThis
-                                                var matchStartTimeString = rows[0].matchStartTime;
-                                                if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
-                                                    position.isReload = true
-                                                    releaseLock(matchId);
-                                                    io.emit(data.matchId, position);
-                                                    return;
-                                                }
-                                                if (totalMovesMadeSoFarInGame == ONE) {
-                                                    const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
-                                                    millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
-                                                    if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
-                                                        logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!! for matchId" + matchId);
-                                                        remaining_millis = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - millisDiff;
-                                                    } else if (gameStatus === RUNNING) {
-                                                        remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff
-                                                    }
-                                                    millitTimeForUserName_1 = remaining_millis;
-                                                } else if (totalMovesMadeSoFarInGame > ONE) {
-                                                    logger.info("more than one move case executing..!!! for matchId" + matchId);
-                                                    var gameStatus = rows[1].status;
-                                                    secondLastMoveForsocket = rows[1];
-                                                    if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
-                                                        logger.info("BLACK is moving now, after white made a move follwed by EMPTY_MOVE.. for matchId" + matchId);
-                                                        const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
-                                                        millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
-                                                        logger.info("millidiff" + millisDiff + "matchId" + matchId);
-                                                        logger.info("REMAINING_TIME_BLACK_IN_SECONDS" + REMAINING_TIME_BLACK_IN_SECONDS +" matcheid" + matchId);
-
-                                                        remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
-                                                        logger.info("remaining_millis" + remaining_millis +" matcheid" + matchId);
-                                                        millitTimeForUserName_1 = rows[0].remaining_millis;
-                                                    } else if (gameStatus === RUNNING) { 
-                                                        logger.info("LAST CASE RUNNING..!!" + " matcheid" + matchId);
-                                                        const mysqlTimestamp = new Date(rows[0].current_move_time_millis);
-                                                        millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
-                                                        remaining_millis = rows[1].remaining_millis - millisDiff;
-                                                        millitTimeForUserName_1 = rows[0].remaining_millis;
-                                                        // position.userName1 = userName1;
-                                                        // position.time1 = remaining_millis-3000;
-                                                        // position.time2 = rows[0].remaining_millis-3000;
-                                                    }
-                                                }
-                                            } else {
-                                                logger.info("last else when no records found" + " matcheid" + matchId);
-                                                remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-                                                millitTimeForUserName_1 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-                                                millitTimeForUserName_2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-
-                                            }
-                                        }
-                                        if (remaining_millis <= 0) {
-                                            position.gameOver = true;
-                                            position.isReload = true;
-                                            //position.millitTimeForUserName_1 = 0;
-                                            position.millitTimeForUserName_1 = millitTimeForUserName_1;
-                                            releaseLock(matchId);
-                                            io.emit(data.matchId, position);
-                                            return;
-                                        }
-                                        // Broadcast the move event to all connected clients
-
-                                        millitTimeForUserName_2 = remaining_millis;
-                                        query = "insert into ?? (`userName1`,`userName2`,`eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `current_move_time_millis`, `source`, `target`, `status`, `remaining_millis`) values(?,?,?,?,?,?,?, FROM_UNIXTIME(?), ? ,?, ?, ?)";
-                                        table = ["move", userName1, userName2, eventId, matchId, challengeId, pgn, fen, currentTimeStampInMillis / 1000, source, target, status, remaining_millis];
-                                        query = mysql.format(query, table);
-                                        logger.debug(query);
-                                        connection.query(query, function(err, rows) {
-                                            if (err) {
-                                                 releaseLock(matchId);
-                                                logger.error("DB ERROR ", JSON.stringify(err));
-                                            } else {
-                                                connection.commit(function(err) {
-                                                    movefinal = rows;
-                                                    logger.error("Error for insert into move", JSON.stringify(err))
-                                                    if (err) {
-
-                                                        connection.rollback(function() {
-                                                            logger.error("error rollback for", JSON.stringify(err));
-                                                        });
-                                                        releaseLock(matchId);
-                                                    } else if(1==2){
-                                                        logger.info("successfully made amove");
-                                                        logger.info("timestamp" + currentTimeStampInMillis +  "usrname" + userName1 + "status" + status);
-                                                        logger.info(JSON.stringify(secondLastMoveForsocket));
-                                                        if(status === 'DRAW') {
-                                                            if (remaining_millis != secondLastMoveForsocket.remaining_millis) {
-                                                                
-                                                                desc = 'E_TIME';
-                                                                winner = remaining_millis > secondLastMoveForsocket.remaining_millis
-                                                                    ? userName1
-                                                                    : secondLastMoveForsocket.userName1;
-
-                                                                const qryString = `UPDATE Match SET winner = ?, winDesc = ? WHERE id = ?`;
-                                                                queryDatabase(qryString, [winner, desc, lastMove.matchId]);
-                                                                logger.debug(`Match table updated with winner based on E_TIME condition ${matchId}`);
-                                                            } else {
-                                                                // Determine the winner based on other game logic (e.g., by point)
-                                                                desc = 'BY_POINT';
-                                                                winnerColor = colorOfWinner(fen); // Define this function based on your game logic
-                                                                if(ChessColors.WHITE == winnerColor) {
-                                                                    let qryString = `UPDATE Match SET winner = ?, winDesc = ? WHERE id = ?`;
-                                                                    queryDatabase(qryString, [userName1, desc, matchId]);
-                                                                    logger.debug(`Match table updated for WHITE BY_POINT ${matchId} and user ${userName1}`);
-                                                                } else if(ChessColors.BLACK == winnerColor) {
-                                                                    let qryString = `UPDATE Match SET winner = ?, winDesc = ? WHERE id = ?`;
-                                                                    queryDatabase(qryString, [userName2, desc, matchId]);
-                                                                    logger.debug(`Match table updated for COLOR BY_POINT ${matchId} and user ${userName2}`);
-                                                                } else {
-                                                                    desc = 'BY_COLOR';
-                                                                    let qryString = `UPDATE Match SET winner = ?, winDesc = ? WHERE id = ?`;
-                                                                    queryDatabase(qryString, [userName2, desc, matchId]);
-                                                                    logger.debug(`Match table updated for COLOR BY_COLOR ${matchId} and user ${userName2}`);
-                                                                }
-                                                            }
-                                                            qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                                                            queryDatabase(qryString, [DONE, matchId]);
-                                                        }
-                                                        releaseLock(matchId);
-                                                    }else if (status == 'CONCLUDED' || status == 'DRAW') {
-                                                        logger.info("calling getLastTwoMovesByMatchId");
-                                                        //getLastTwoMovesByMatchId(matchId);
-                                                        fetchMatchDetails1(matchId, userName1);
-                                                        releaseLock(matchId);
-                                                    }
-                                                });
-                                            }
-                                        })
-                                        if (remaining_millis < 0) {
-                                            position.gameOver = true
-                                        } else {
-                                            position.gameOver = false
-                                        }
-                                        // Broadcast the move event to all connected clients
-                                        position.millitTimeForUserName_1 = millitTimeForUserName_1;
-                                        position.millitTimeForUserName_2 = millitTimeForUserName_2;
-                                        releaseLock(matchId);
-                                        io.emit(data.matchId, position);
-                                    });
-
-                                }
-                            }
-                        });
-
-
-
-
-                    });
-                }
-            }
-
-
-
-
-        } else {
-            // Token is invalid, handle accordingly (e.g., emit an error event)
+        if (!tokenData) {
+            // Token is invalid, handle accordingly
             logger.error('Invalid token');
             socket.emit('error', 'Invalid token');
+            return;
+        }
+
+        logger.info('User authenticated');
+
+        const position = {
+            ...data,
+            userName1: null,
+        };
+
+        const game = new Chess(data.prevFen);
+        const move = game.move({
+            from: data.source,
+            to: data.target,
+            promotion: 'q',
+        });
+
+        if (!move) {
+            logger.error("Illegal move");
+            position.error = true;
+            position.isReload = true;
+            releaseLock(data.matchId);
+            io.emit(data.matchId, position);
+            return;
+        }
+
+        const userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
+        const userName1 = userName1Obj.sub;
+        position.userName1 = userName1;
+
+        try {
+            await db_pool.beginTransaction();
+
+            // Validate match existence
+            const query1 = "SELECT * FROM ?? WHERE id = ? AND (user_1 = ? OR user_2 = ?);";
+            const table1 = ["matches", data.matchId, userName1, userName1];
+            const [rows1] = await db_pool.query(mysql.format(query1, table1));
+
+            if (rows1.length === 0) {
+                logger.error("Match not found or invalid user");
+                position.error = true;
+                position.isReload = true;
+                releaseLock(data.matchId);
+                io.emit(data.matchId, position);
+                return;
+            }
+
+            // Fetch last two moves
+            const query2 = "SELECT * FROM ?? WHERE matchId = ? ORDER BY id DESC LIMIT 2;";
+            const table2 = ["move", data.matchId];
+            const [moves] = await db_pool.query(mysql.format(query2, table2));
+
+            let remainingMillis = REMAINING_TIME_WHITE_IN_SECONDS * 1000;
+
+            if (moves.length > 0) {
+                const lastMove = moves[0];
+                const millisDiff = Date.now() - new Date(lastMove.current_move_time_millis).getTime();
+                remainingMillis = lastMove.remaining_millis - millisDiff;
+            }
+
+            if (remainingMillis <= 0) {
+                position.gameOver = true;
+                position.isReload = true;
+                position.millitTimeForUserName_1 = 0;
+                releaseLock(data.matchId);
+                io.emit(data.matchId, position);
+                return;
+            }
+
+            // Insert new move
+            const query3 = "INSERT INTO ?? (`userName1`, `userName2`, `eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `current_move_time_millis`, `source`, `target`, `status`, `remaining_millis`) VALUES (?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?);";
+            const table3 = ["move", userName1, "", "", data.matchId, "", data.pgn, data.fen, Date.now() / 1000, data.source, data.target, RUNNING, remainingMillis];
+            await db_pool.query(mysql.format(query3, table3));
+
+            await db_pool.commit();
+
+            position.millitTimeForUserName_1 = remainingMillis;
+            position.millitTimeForUserName_2 = remainingMillis;
+            releaseLock(data.matchId);
+            io.emit(data.matchId, position);
+        } catch (err) {
+            logger.error("Database error: " + JSON.stringify(err));
+            await db_pool.rollback();
+            position.error = true;
+            position.isReload = true;
+            releaseLock(data.matchId);
+            io.emit(data.matchId, position);
         }
     });
 
@@ -846,6 +651,7 @@ io.on('connection', (socket) => {
         logger.info('User disconnected');
     });
 });
+
 
 const PORT = process.env.PORT || 3000;
 
