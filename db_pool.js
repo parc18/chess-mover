@@ -54,13 +54,4 @@ function query(sql, params) {
   });
 }
 
-// Example usage
-query('SELECT * FROM users WHERE id = ?', [1])
-  .then((result) => {
-    logger.info('Query result:', result);
-  })
-  .catch((err) => {
-    logger.error('Query failed:', err);
-  });
-
 module.exports = { query, pool };
