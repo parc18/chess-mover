@@ -13,6 +13,9 @@ const winston = require('winston');
 const cors = require('cors');
 // const Match = require('./model/Match');
 // const move = require('./model/move');
+const ResourceFairLock = require('./ResourceFairLock');
+
+const fairLock = new ResourceFairLock();
 const { acquireLock, releaseLock, waitForLock } = require('./lockManager'); // Import the lock functions
 const lock = {};
 var position = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -28,6 +31,7 @@ const RUNNING = 'RUNNING';
 const timesUpsDeltaCheck = 0;
 const DONE = 'DONE';
 const UTC_ADD_UP = 19800000;
+const TIME_OUT_FOR_API = 7000;
 
 
 //############################################################################################
@@ -110,12 +114,7 @@ async function fetchMatchDetails(id, userName) {
 
     try {
         // Acquire the lock
-        let isLockAcquired = await acquireLock(id);
-        if (!isLockAcquired) {
-            logger.info('lock wait for ' + userName)
-           // await waitForLock(id); // Wait for the lock to be released
-            isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
-        }
+        const release = await fairLock.acquire(id, TIME_OUT_FOR_API);
 
         logger.info('match id for user ' + userName +"match id"+ id);
         logger.info("lock acquireLock " + isLockAcquired)
@@ -144,7 +143,7 @@ async function fetchMatchDetails(id, userName) {
 
         // Fetch the latest move and calculate the minutes left
         const latestMove = await getLatestMove(id, userName, match, latestMove1);
-        releaseLock(id);
+        release();
         // Set up the response structure
         return {
             code: 200,
@@ -165,7 +164,7 @@ async function fetchMatchDetails(id, userName) {
         };
     } finally {
         // Release the lock after processing is complete
-        releaseLock(id);
+        release();
     }
 }
 
@@ -608,6 +607,8 @@ io.on('connection', (socket) => {
             }
             let currentTimeStampInMillis = new Date().getTime();
             // Fetch last two moves
+
+            const release = await fairLock.acquire(data.matchId, TIME_OUT_FOR_API);
             const query2 = "SELECT * FROM ?? WHERE matchId = ? ORDER BY id DESC LIMIT 2;";
             const table2 = ["move", data.matchId];
             const moves = await query(mysql.format(query2, table2));
@@ -627,8 +628,8 @@ io.on('connection', (socket) => {
                 var matchStartTimeString = moves[0].matchStartTime;
                 if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
                     position.isReload = true
-                    releaseLock(matchId);
                     io.emit(data.matchId, position);
+                    release();
                     return;
                 }
                 if (totalMovesMadeSoFarInGame == ONE) {
@@ -669,7 +670,7 @@ io.on('connection', (socket) => {
                 position.gameOver = true;
                 position.isReload = true;
                 position.millitTimeForUserName_1 = 0;
-                releaseLock(data.matchId);
+                release();
                 io.emit(data.matchId, position);
                 return;
             }
@@ -683,14 +684,14 @@ io.on('connection', (socket) => {
 
             position.millitTimeForUserName_1 = millitTimeForUserName_1;
             position.millitTimeForUserName_2 = millitTimeForUserName_2;
-            releaseLock(data.matchId);
+            release();
             io.emit(data.matchId, position);
         } catch (err) {
             logger.error("Database error: " + JSON.stringify(err.stack));
             //await pool.rollback();
             position.error = true;
             position.isReload = true;
-            releaseLock(data.matchId);
+            release();
             io.emit(data.matchId, position);
         }
     });
