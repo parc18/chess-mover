@@ -16,7 +16,7 @@ class ResourceFairLock {
       }
 
       const queue = this.locks.get(resourceId);
-
+      let timeoutHandle;
       const tryAcquire = () => {
         if (queue[0] === tryAcquire) {
           console.log(`Lock acquired for resource: ${resourceId}`);
@@ -36,7 +36,6 @@ class ResourceFairLock {
       }
 
       // Handle timeout if specified
-      let timeoutHandle;
       if (timeout > 0) {
         timeoutHandle = setTimeout(() => {
           // Remove this request from the queue if it times out

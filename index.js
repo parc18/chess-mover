@@ -23,6 +23,7 @@ var MATCH_DURATION_IN_MINUTES = 6;
 const ONE_THOUSAND = 1000;
 const MINUTE_TO_SECONDS_MULTIPLYER_60 = 60;
 const CONCLUDED_STATUS = 'CONCLUDED';
+const DRAW = 'DRAW';
 const NO_SHOW_STATUS = 'NO_SHOW';
 const BLACK_EMPTY_MOVE_FOR_NO_SHOW = 'EMPTY_MOVE';
 let REMAINING_TIME_WHITE_IN_SECONDS = (MATCH_DURATION_IN_MINUTES * 60) / 2;
@@ -111,13 +112,11 @@ async function fetchMatchDetails1(id, userName) {
 async function fetchMatchDetails(id, userName) {
     let match = null;
     let latestMove1 = null;
-
+    const release = await fairLock.acquire(id, TIME_OUT_FOR_API);
     try {
         // Acquire the lock
-        const release = await fairLock.acquire(id, TIME_OUT_FOR_API);
 
         logger.info('match id for user ' + userName +"match id"+ id);
-        logger.info("lock acquireLock " + isLockAcquired)
 
         if (id < 1) {
             return {
@@ -520,10 +519,7 @@ io.on('connection', (socket) => {
     logger.info('Connection established');
 
     socket.on('move', async (data) => {
-        logger.debug("Move event received: " + JSON.stringify(data));
-
-        let isLockAcquired = acquireLock(data.matchId);
- 
+        logger.debug("Move event received: " + JSON.stringify(data)); 
 
         const jwtParts = data.auth.split('.');
         const payloadInBase64UrlFormat = jwtParts[1];
@@ -546,11 +542,14 @@ io.on('connection', (socket) => {
         };
 
         const game = new Chess(data.prevFen);
+        const game2 = new Chess();
         const move = game.move({
             from: data.source,
             to: data.target,
             promotion: 'q',
         });
+        console.log("pgn" + data.pgn);
+        game2.load_pgn(data.pgn);
         const userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
         const userName1 = userName1Obj.sub;
         position.userName1 = userName1;
@@ -562,17 +561,17 @@ io.on('connection', (socket) => {
             io.emit(data.matchId, position);
             return;
         }
-
         try {
             //await pool.beginTransaction(); 
             if (game.in_checkmate()) {
                 status = 'CONCLUDED'
-            } else if (game.in_draw()) {
+            } else if (game.in_draw() || game2.in_draw()) {
+                console.log("yes its DRAW");
                 status = 'DRAW'
             } else {
                 status = RUNNING
             }
-            logger.error("trying " + userName1);
+            logger.info("trying socket for  " + userName1);
             if (data.gameOver) {
                 logger.debug('game over');
                 releaseLock(data.matchId);
@@ -626,7 +625,7 @@ io.on('connection', (socket) => {
                 var userNameOfCurrentMove = userName1;
                 var totalMovesMadeSoFarInGame = moves.length;
                 var matchStartTimeString = moves[0].matchStartTime;
-                if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
+                if (gameStatus === DRAW || gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
                     position.isReload = true
                     io.emit(data.matchId, position);
                     release();
@@ -684,6 +683,8 @@ io.on('connection', (socket) => {
 
             position.millitTimeForUserName_1 = millitTimeForUserName_1;
             position.millitTimeForUserName_2 = millitTimeForUserName_2;
+            if(status == DRAW)
+                position.isDraw = true;
             release();
             io.emit(data.matchId, position);
         } catch (err) {
