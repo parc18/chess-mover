@@ -4,6 +4,7 @@ const socketIO = require('socket.io');
 const mysql = require('mysql');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
+const { query, pool } = require('./db_pool');
 const {
     Chess
 } = require('chess.js')
@@ -51,58 +52,12 @@ dotenv.config();
 
 const app = express();
 app.use(cors({
-  origin: ['https://32chess.com', 'https://www.32chess.com'],
+  origin: ['http://localhost:8080'],
   methods: 'GET',
   credentials: true,
 }));
 const server = http.createServer(app);
 const io = socketIO(server);
-
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-});
-
-var connection;
-// Database configuration
-const db_config = {
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  connectionLimit: 40, // Maximum number of connections in the pool
-};
-
-// Create a connection pool
-const pool = mysql.createPool(db_config);
-
-function handleDisconnect() {
-  pool.on('acquire', (connection) => {
-    logger.info(`Connection ${connection.threadId} acquired`);
-  });
-
-  pool.on('release', (connection) => {
-    logger.info(`Connection ${connection.threadId} released`);
-  });
-
-  pool.on('error', (err) => {
-    logger.error('Database error:', err.code);
-
-    // If the error is recoverable, reconnect
-    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-      logger.warn('Recreating the connection pool due to lost connection...');
-      pool.end(() => {
-        pool = mysql.createPool(db_config); // Recreate the pool
-        handleDisconnect();
-      });
-    } else {
-      throw err; // Unexpected errors should still be thrown
-    }
-  });
-}
-
 
 // Middleware function to validate JWT token
 const authenticateToken = (token) => {
@@ -145,7 +100,7 @@ app.get('/match/:id', verifyJWT, async (req, res) => {
 });
 
 async function fetchMatchDetails1(id, userName) { 
-await fetchMatchDetails(id, userName);
+    await fetchMatchDetails(id, userName);
 }
 
 // Refactored function to handle the main logic of fetching a match by ID and username
@@ -158,7 +113,7 @@ async function fetchMatchDetails(id, userName) {
         let isLockAcquired = await acquireLock(id);
         if (!isLockAcquired) {
             logger.info('lock wait for ' + userName)
-            await waitForLock(id); // Wait for the lock to be released
+           // await waitForLock(id); // Wait for the lock to be released
             isLockAcquired = await acquireLock(id); // Try to acquire the lock again after waiting
         }
 
@@ -178,6 +133,7 @@ async function fetchMatchDetails(id, userName) {
 
         // Fetch match details
         match = await getMatchById(id);
+        logger.info('Query Results for match for user :' + userName + " ", JSON.stringify(match));
         if (!match) throw new Error('Match not found');
 
         // Set color based on userName comparison
@@ -213,31 +169,16 @@ async function fetchMatchDetails(id, userName) {
     }
 }
 
-
-
-
-function queryDatabase(sqlQuery, values) {
-  return new Promise((resolve, reject) => {
-    connection.query(sqlQuery, values, (error, results) => {
-      if (error) {
-        return reject(error);
-      }
-      resolve(results);
-    });
-  });
-}
-
 async function getMatchById(matchId) {
   try {
     const sqlQuery = 'SELECT * FROM matches WHERE id = ?';
-    const results = await queryDatabase(sqlQuery, [matchId]);
-    return results.length > 0 ? results[0] : null;
+    const [results] = await query(sqlQuery, [matchId]);
+     logger.info('Query Results:', results.length);
+    return results;
   } catch (error) {
     console.error('Error executing query:', error);
-    throw error; // re-throw the error to handle it outside
-  } //finally {
-    //connection.end(); // Close the connection when done
-  //}
+    throw error; // Re-throw the error to handle it outside
+  }
 }
 
 function verifyJWT(req, res, next) {
@@ -250,15 +191,8 @@ function verifyJWT(req, res, next) {
     const jwtParts = token.split('.');
     //const headerInBase64UrlFormat = jwtParts[0];
     payloadInBase64UrlFormat = jwtParts[1];
-    logger.info('hell yeah  '+payloadInBase64UrlFormat)
     // const signatureInBase64UrlFormat = jwtParts[2];
     var userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
-
-    //logger.info('hell yeah 2 '+JSON.parse(base64.decode(payloadInBase64UrlFormat)))
-
-
-    
-    
     jwt.verify(token, "javainuse", {
         algorithms: ['HS256'],
         encoding: 'utf-8'
@@ -266,8 +200,7 @@ function verifyJWT(req, res, next) {
         if (err) {
             return res.status(403).json({ message: 'Invalid or expired token' });
         }
-         logger.info("JWT USER ", JSON.stringify(userName1Obj));
-             logger.info('hell yeah  3 '+userName1Obj.sub)
+        logger.info('verifying user  '+userName1Obj.sub)
 
         req.user = userName1Obj.sub; // attach the decoded user information to the request object
         next();
@@ -283,9 +216,11 @@ async function getLatestMove(id, userName, match, moves) {
   if(match.winner_user_name_id != 'null' && match.winner_user_name_id != null) {
     shouldRunGameOverCheck = false
   }
+
   if (moves.length === 0) return null;
 
   let lastMove = moves[0];
+
   let secondLastMove = moves.length > 1 ? moves[1] : null;
 
   // If the move status is DONE or specific no-show cases
@@ -312,9 +247,9 @@ async function getLastTwoMovesByMatchId(matchId) {
     ORDER BY id DESC
     LIMIT 2;
   `;
-  
+
   try {
-    const results = await queryDatabase(sqlQuery, [matchId]);
+    const results = await query(sqlQuery, [matchId]);
     return results;
   } catch (error) {
     console.error('Error executing query:', error);
@@ -414,78 +349,125 @@ async function isGameOver(lastMove, secondLastMove) {
                 return;
             }
             if (lastMove.status === 'BLACK_EMPTY_MOVE_FOR_NO_SHOW') {
-                let desc = 'BLACK_EMPTY_MOVE_FOR_NO_SHOW';
-                let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
-                await queryDatabase(qryString, [lastMove.userName1, desc, lastMove.matchId]);
-                qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                await queryDatabase(qryString, [DONE, lastMove.id]);
-                logger.debug(`Match and move tables updated for BLACK_EMPTY_MOVE_FOR_NO_SHOW and user ${lastMove.userName1} and matchid ${lastMove.matchId}`);
+                const desc = 'BLACK_EMPTY_MOVE_FOR_NO_SHOW';
+                try {
+                    // Update matches table
+                    let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
+                    await query(qryString, [lastMove.userName1, desc, lastMove.matchId]);
+
+                    // Update move table
+                    qryString = `UPDATE move SET status = ? WHERE id = ?`;
+                    await query(qryString, ['DONE', lastMove.id]);
+
+                    logger.debug(`Match and move tables updated for BLACK_EMPTY_MOVE_FOR_NO_SHOW and user ${lastMove.userName1} and matchId ${lastMove.matchId}`);
+                } catch (error) {
+                    logger.error(`Error updating tables for BLACK_EMPTY_MOVE_FOR_NO_SHOW: ${error.message}`, error);
+                    throw error; // Propagate the error to handle it upstream
+                }
                 return;
             }
 
         if (lastMove.status === 'CONCLUDED' || lastMove.status === 'DRAW' ||(lastMove.minuteLeft2 <= timesUpsDeltaCheck || lastMove.minuteLeft <= timesUpsDeltaCheck )) {
             let desc = 'DIRECT';
-            if (lastMove.status === 'CONCLUDED') {
-                if (lastMove.pgn.endsWith('#')) {
-                    desc = 'DIRECT';
-                } else {
-                    desc = 'D_TIME'; // direct time lost game
-                }
+        if (lastMove.status === 'CONCLUDED') {
+            try {
+                const desc = lastMove.pgn.endsWith('#') ? 'DIRECT' : 'D_TIME'; // Determine win description
 
+                // Update matches table
                 let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
-                await queryDatabase(qryString, [lastMove.userName1, desc, lastMove.matchId]);
+                await query(qryString, [lastMove.userName1, desc, lastMove.matchId]);
+
+                // Update move table
                 qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                await queryDatabase(qryString, [DONE, lastMove.id]);
-                logger.debug(`Match table updated for CONCLUDED or DRAW with winner ${lastMove.userName1} user ${lastMove.userName1} and matchid ${lastMove.matchId}`);
-            } else {
-                let winner;
-                logger.info("got" + secondLastMove);
-                if((secondLastMove == null || secondLastMove == 'undefined')) {
-                    winner = lastMove.userName1;
-                    desc = 'D_TIME';
+                await query(qryString, ['DONE', lastMove.id]);
 
-                    let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
-                    await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
-                    logger.debug(`Match table updated with winner based on E_TIME condition`);
-                    qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                    await queryDatabase(qryString, [DONE, lastMove.id]);
-                }else if (lastMove.status != 'DRAW') {
-                    
-                    desc = 'D_TIME';
-                    winner = lastMove.userName1;
+                logger.debug(`Match table updated for CONCLUDED or DRAW with winner ${lastMove.userName1}, user ${lastMove.userName1}, and matchId ${lastMove.matchId}`);
+            } catch (error) {
+                logger.error(`Error updating tables for CONCLUDED status: ${error.message}`, error);
+                throw error; // Propagate the error for upstream handling
+            }
+        } else {
+                try {
+                    let winner;
+                    let desc;
 
-                    let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
-                    await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
-                    logger.debug(`Match table updated with winner based on D_TIME condition`);
-                    qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                    await queryDatabase(qryString, [DONE, lastMove.id]);
-                } else if (lastMove.status == 'DRAW') {
+                    logger.info("got " + secondLastMove);
 
-                    if(lastMove.remaining_millis != secondLastMove.remaining_millis) {
-                        winner = lastMove.remaining_millis > secondLastMove.remaining_millis
-                        ? lastMove.userName1
-                        : secondLastMove.userName1;
-                        desc = 'DRAW_TIME';
-                         let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
-                        await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
-                        logger.debug(`Match table updated with winner based on DRAW_TIME condition`);
-                        // qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                        // await queryDatabase(qryString, [DONE, lastMove.id]);
+                    if (!secondLastMove) {
+                        // E_TIME condition
+                        winner = lastMove.userName1;
+                        desc = 'D_TIME';
 
-                    }else{
-                         desc = 'BY_POINT';
-                        winner = determineWinnerByColor(lastMove); // Define this function based on your game logic
+                        await query(
+                            `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
+                            [winner, desc, lastMove.matchId]
+                        );
 
-                        let qryString = `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`;
-                        await queryDatabase(qryString, [winner, desc, lastMove.matchId]);
-                        logger.debug(`Match table updated for BY_POINT`);
-                        qryString = `UPDATE move SET status = ? WHERE id = ?`;
-                        await queryDatabase(qryString, [DONE, lastMove.id]);
+                        logger.debug(`Match table updated with winner based on E_TIME condition`);
+
+                        await query(
+                            `UPDATE move SET status = ? WHERE id = ?`,
+                            ['DONE', lastMove.id]
+                        );
+
+                    } else if (lastMove.status !== 'DRAW') {
+                        // D_TIME condition
+                        winner = lastMove.userName1;
+                        desc = 'D_TIME';
+
+                        await query(
+                            `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
+                            [winner, desc, lastMove.matchId]
+                        );
+
+                        logger.debug(`Match table updated with winner based on D_TIME condition`);
+
+                        await query(
+                            `UPDATE move SET status = ? WHERE id = ?`,
+                            ['DONE', lastMove.id]
+                        );
+
+                    } else if (lastMove.status === 'DRAW') {
+                        // DRAW condition
+                        if (lastMove.remaining_millis !== secondLastMove.remaining_millis) {
+                            // DRAW_TIME condition
+                            winner = lastMove.remaining_millis > secondLastMove.remaining_millis
+                                ? lastMove.userName1
+                                : secondLastMove.userName1;
+
+                            desc = 'DRAW_TIME';
+
+                            await query(
+                                `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
+                                [winner, desc, lastMove.matchId]
+                            );
+
+                            logger.debug(`Match table updated with winner based on DRAW_TIME condition`);
+
+                        } else {
+                            // BY_POINT condition
+                            desc = 'BY_POINT';
+                            winner = determineWinnerByColor(lastMove); // Define this function based on your game logic
+
+                            await query(
+                                `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
+                                [winner, desc, lastMove.matchId]
+                            );
+
+                            logger.debug(`Match table updated for BY_POINT`);
+
+                            await query(
+                                `UPDATE move SET status = ? WHERE id = ?`,
+                                ['DONE', lastMove.id]
+                            );
+                        }
                     }
-                    // Determine the winner based on other game logic (e.g., by point)
-                   
+                } catch (error) {
+                    logger.error(`Error updating tables for match logic: ${error.message}`, error);
+                    throw error; // Propagate the error for upstream handling
                 }
             }
+
         }
 
     } catch (error) {
@@ -542,10 +524,7 @@ io.on('connection', (socket) => {
         logger.debug("Move event received: " + JSON.stringify(data));
 
         let isLockAcquired = acquireLock(data.matchId);
-        if (!isLockAcquired) {
-            await waitForLock(data.matchId); // Wait for the lock to be released
-            isLockAcquired = acquireLock(data.matchId); // Try to acquire the lock again after waiting
-        }
+ 
 
         const jwtParts = data.auth.split('.');
         const payloadInBase64UrlFormat = jwtParts[1];
@@ -573,9 +552,11 @@ io.on('connection', (socket) => {
             to: data.target,
             promotion: 'q',
         });
-
+        const userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
+        const userName1 = userName1Obj.sub;
+        position.userName1 = userName1;
         if (!move) {
-            logger.error("Illegal move");
+            logger.error("Illegal move by " + userName1);
             position.error = true;
             position.isReload = true;
             releaseLock(data.matchId);
@@ -583,18 +564,40 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const userName1Obj = JSON.parse(base64.decode(payloadInBase64UrlFormat));
-        const userName1 = userName1Obj.sub;
-        position.userName1 = userName1;
-
         try {
-            await db_pool.beginTransaction();
+            //await pool.beginTransaction(); 
+            if (game.in_checkmate()) {
+                status = 'CONCLUDED'
+            } else if (game.in_draw()) {
+                status = 'DRAW'
+            } else {
+                status = RUNNING
+            }
+            logger.error("trying " + userName1);
+            if (data.gameOver) {
+                logger.debug('game over');
+                releaseLock(data.matchId);
+                return;
+            }
 
+            var userName2 = "";
+            var eventId = '';
+            var matchId = data.matchId;
+            var challengeId = '';
+            var pgn = data.pgn;
+            var fen = data.fen;
+            var target = data.target
+            var source = data.source
+            var millitTimeForUserName_1 = 0;
+            var millitTimeForUserName_2 = 0;
+            var matchFinal = null;
+            var movefinal = null;
             // Validate match existence
             const query1 = "SELECT * FROM ?? WHERE id = ? AND (user_1 = ? OR user_2 = ?);";
             const table1 = ["matches", data.matchId, userName1, userName1];
-            const [rows1] = await db_pool.query(mysql.format(query1, table1));
-
+            const rows1 = await query(mysql.format(query1, table1));
+            logger.info('rows1')
+            logger.info(rows1)
             if (rows1.length === 0) {
                 logger.error("Match not found or invalid user");
                 position.error = true;
@@ -603,18 +606,63 @@ io.on('connection', (socket) => {
                 io.emit(data.matchId, position);
                 return;
             }
-
+            let currentTimeStampInMillis = new Date().getTime();
             // Fetch last two moves
             const query2 = "SELECT * FROM ?? WHERE matchId = ? ORDER BY id DESC LIMIT 2;";
             const table2 = ["move", data.matchId];
-            const [moves] = await db_pool.query(mysql.format(query2, table2));
+            const moves = await query(mysql.format(query2, table2));
 
             let remainingMillis = REMAINING_TIME_WHITE_IN_SECONDS * 1000;
-
+            if(moves.length == 0) {
+                logger.info("No moves found" + " matcheid" + matchId);
+                remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
+                millitTimeForUserName_1 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
+                millitTimeForUserName_2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
+            }
             if (moves.length > 0) {
-                const lastMove = moves[0];
-                const millisDiff = Date.now() - new Date(lastMove.current_move_time_millis).getTime();
-                remainingMillis = lastMove.remaining_millis - millisDiff;
+                var gameStatus = moves[0].status;
+                var userNameOfLastMoved = moves[0].userName1;
+                var userNameOfCurrentMove = userName1;
+                var totalMovesMadeSoFarInGame = moves.length;
+                var matchStartTimeString = moves[0].matchStartTime;
+                if (gameStatus === CONCLUDED_STATUS || gameStatus === NO_SHOW_STATUS || userNameOfLastMoved === userNameOfCurrentMove) {
+                    position.isReload = true
+                    releaseLock(matchId);
+                    io.emit(data.matchId, position);
+                    return;
+                }
+                if (totalMovesMadeSoFarInGame == ONE) {
+                    const mysqlTimestamp = new Date(moves[0].current_move_time_millis);
+                    millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
+                    if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
+                        logger.info("WHITE is moving now, found EMPTY_MOVE from BLACK.. because WHITE was late for first move!! for matchId" + matchId);
+                        remaining_millis = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - millisDiff;
+                    } else if (gameStatus === RUNNING) {
+                        remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff
+                    }
+                    millitTimeForUserName_1 = remaining_millis;
+                } else if (totalMovesMadeSoFarInGame > ONE) {
+                    logger.info("more than one move case executing..!!! for matchId" + matchId);
+                    var gameStatus = moves[1].status;
+                    secondLastMoveForsocket = moves[1];
+                    if (gameStatus === BLACK_EMPTY_MOVE_FOR_NO_SHOW) {
+                        logger.info("BLACK is moving now, after white made a move follwed by EMPTY_MOVE.. for matchId" + matchId);
+                        const mysqlTimestamp = new Date(moves[0].current_move_time_millis);
+                        millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
+                        logger.info("millidiff" + millisDiff + "matchId" + matchId);
+                        logger.info("REMAINING_TIME_BLACK_IN_SECONDS" + REMAINING_TIME_BLACK_IN_SECONDS +" matcheid" + matchId);
+
+                        remaining_millis = (REMAINING_TIME_BLACK_IN_SECONDS * ONE_THOUSAND) - millisDiff;
+                        logger.info("remaining_millis" + remaining_millis +" matcheid" + matchId);
+                        millitTimeForUserName_1 = moves[0].remaining_millis;
+                    } else if (gameStatus === RUNNING) { 
+                        logger.info("LAST CASE RUNNING..!!" + " matcheid" + matchId);
+                        const mysqlTimestamp = new Date(moves[0].current_move_time_millis);
+                        millisDiff = new Date().getTime() - (mysqlTimestamp.getTime() + 19800000);
+                        remaining_millis = moves[1].remaining_millis - millisDiff;
+                        millitTimeForUserName_1 = moves[0].remaining_millis;
+                    }
+                }
             }
 
             if (remainingMillis <= 0) {
@@ -625,21 +673,21 @@ io.on('connection', (socket) => {
                 io.emit(data.matchId, position);
                 return;
             }
-
+            millitTimeForUserName_2 = remaining_millis;
             // Insert new move
             const query3 = "INSERT INTO ?? (`userName1`, `userName2`, `eventId`, `matchId`, `challengeId`, `pgn`, `fen`, `current_move_time_millis`, `source`, `target`, `status`, `remaining_millis`) VALUES (?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?);";
-            const table3 = ["move", userName1, "", "", data.matchId, "", data.pgn, data.fen, Date.now() / 1000, data.source, data.target, RUNNING, remainingMillis];
-            await db_pool.query(mysql.format(query3, table3));
+            const table3 = ["move", userName1, userName2, eventId, matchId, challengeId, pgn, fen, currentTimeStampInMillis / 1000, source, target, status, remaining_millis];
+            await query(mysql.format(query3, table3));
 
-            await db_pool.commit();
+            //await pool.commit();
 
-            position.millitTimeForUserName_1 = remainingMillis;
-            position.millitTimeForUserName_2 = remainingMillis;
+            position.millitTimeForUserName_1 = millitTimeForUserName_1;
+            position.millitTimeForUserName_2 = millitTimeForUserName_2;
             releaseLock(data.matchId);
             io.emit(data.matchId, position);
         } catch (err) {
-            logger.error("Database error: " + JSON.stringify(err));
-            await db_pool.rollback();
+            logger.error("Database error: " + JSON.stringify(err.stack));
+            //await pool.rollback();
             position.error = true;
             position.isReload = true;
             releaseLock(data.matchId);
