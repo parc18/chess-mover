@@ -426,39 +426,55 @@ async function isGameOver(lastMove, secondLastMove) {
                         );
 
                     } else if (lastMove.status === 'DRAW') {
-                        // DRAW condition
-                        if (lastMove.remaining_millis !== secondLastMove.remaining_millis) {
-                            // DRAW_TIME condition
-                            winner = lastMove.remaining_millis > secondLastMove.remaining_millis
-                                ? lastMove.userName1
-                                : secondLastMove.userName1;
 
-                            desc = 'DRAW_TIME';
+                        // Determine the winner based on other game logic (e.g., by point)
+                        desc = 'BY_POINT';
+                        winnerColor = colorOfWinner(fen); // Define this function based on your game logic
+                        var whiteUser = lastMove.fen.includes('w') ? lastMove.userName1 : secondLastMove.userName1;
+                        var blackUser = lastMove.fen.includes('w') ? secondLastMove.userName1 : lastMove.userName1;
+                        logger.debug(`Draw winner color is ${winnerColor}`);
+                        if(ChessColors.NONE == winnerColor) {
+                            if (lastMove.remaining_millis !== secondLastMove.remaining_millis) {
+                                // DRAW_TIME condition
+                                winner = lastMove.remaining_millis > secondLastMove.remaining_millis
+                                    ? lastMove.userName1
+                                    : secondLastMove.userName1;
 
-                            await query(
-                                `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
-                                [winner, desc, lastMove.matchId]
-                            );
+                                desc = 'DRAW_TIME';
 
-                            logger.debug(`Match table updated with winner based on DRAW_TIME condition`);
+                                await query(
+                                    `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
+                                    [winner, desc, lastMove.matchId]
+                                );
+
+                                logger.debug(`Match table updated with winner based on DRAW_TIME condition`);
+                            } else {
+                                desc = 'DIRECT_BLACK';
+                                await query(
+                                    `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
+                                    [blackUser, desc, lastMove.matchId]
+                                );
+                                logger.debug(`Match table updated for BLACK COLOR ${lastMove.matchId} and user ${blackUser}`);
+                            }
 
                         } else {
-                            // BY_POINT condition
                             desc = 'BY_POINT';
-                            winner = determineWinnerByColor(lastMove); // Define this function based on your game logic
-
+                            if(winnerColor == ChessColors.WHITE) {
+                                winner = whiteUser;
+                            } else if(winnerColor == ChessColors.BLACK) {
+                                winner = blackUser;
+                            }
                             await query(
                                 `UPDATE matches SET winner_user_name_id = ?, win_desc = ? WHERE id = ?`,
                                 [winner, desc, lastMove.matchId]
                             );
-
                             logger.debug(`Match table updated for BY_POINT`);
-
-                            await query(
-                                `UPDATE move SET status = ? WHERE id = ?`,
-                                ['DONE', lastMove.id]
-                            );
                         }
+                        await query(
+                            `UPDATE move SET status = ? WHERE id = ?`,
+                            ['DONE', lastMove.id]
+                        );
+                        logger.debug(`move table updated as DONE`);
                     }
                 } catch (error) {
                     logger.error(`Error updating tables for match logic: ${error.message}`, error);
