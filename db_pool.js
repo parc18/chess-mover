@@ -9,7 +9,7 @@ const db_config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
-  connectionLimit: 10, // Maximum number of connections in the pool
+  connectionLimit: 32, // Maximum number of connections in the pool
 };
 
 // Create a connection pool
