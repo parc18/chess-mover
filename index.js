@@ -429,9 +429,9 @@ async function isGameOver(lastMove, secondLastMove) {
 
                         // Determine the winner based on other game logic (e.g., by point)
                         desc = 'BY_POINT';
-                        winnerColor = colorOfWinner(fen); // Define this function based on your game logic
-                        var whiteUser = lastMove.fen.includes('w') ? lastMove.userName1 : secondLastMove.userName1;
-                        var blackUser = lastMove.fen.includes('w') ? secondLastMove.userName1 : lastMove.userName1;
+                        winnerColor = colorOfWinner(lastMove.fen); // Define this function based on your game logic
+                        var blackUser = lastMove.fen.includes('w') ? lastMove.userName1 : secondLastMove.userName1;
+                        var whiteUser = lastMove.fen.includes('w') ? secondLastMove.userName1 : lastMove.userName1;
                         logger.debug(`Draw winner color is ${winnerColor}`);
                         if(ChessColors.NONE == winnerColor) {
                             if (lastMove.remaining_millis !== secondLastMove.remaining_millis) {
@@ -470,11 +470,6 @@ async function isGameOver(lastMove, secondLastMove) {
                             );
                             logger.debug(`Match table updated for BY_POINT`);
                         }
-                        await query(
-                            `UPDATE move SET status = ? WHERE id = ?`,
-                            ['DONE', lastMove.id]
-                        );
-                        logger.debug(`move table updated as DONE`);
                     }
                 } catch (error) {
                     logger.error(`Error updating tables for match logic: ${error.message}`, error);
