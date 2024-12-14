@@ -1,5 +1,7 @@
 const mysql = require('mysql');
 const logger = require('./logger_config');
+const dotenv = require('dotenv');
+dotenv.config();
 
 // Database configuration
 const db_config = {
