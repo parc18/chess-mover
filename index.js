@@ -628,7 +628,7 @@ io.on('connection', (socket) => {
             const table2 = ["move", data.matchId];
             const moves = await query(mysql.format(query2, table2));
 
-            let remainingMillis = REMAINING_TIME_WHITE_IN_SECONDS * 1000;
+            let remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * 1000;
             if(moves.length == 0) {
                 logger.info("No moves found" + " matcheid" + matchId);
                 remaining_millis = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
@@ -681,7 +681,7 @@ io.on('connection', (socket) => {
                 }
             }
 
-            if (remainingMillis <= 0) {
+            if (remaining_millis <= 0) {
                 position.gameOver = true;
                 position.isReload = true;
                 position.millitTimeForUserName_1 = 0;
