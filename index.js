@@ -309,7 +309,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                   }
         }
     }else{
-      const remainingTime = getAdjustedTime(lastMove, secondLastMove);
+      const remainingTime = getAdjustedTime2(lastMove, secondLastMove);
 
       if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
         lastMove.minuteLeft2 = remainingTime;
