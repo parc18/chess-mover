@@ -325,17 +325,33 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
 }
 
 function getAdjustedTime(move, secondLastMove) {
-    logger.info("getAdjustedTime for userName1 " + move.userName1 + " with Date.now() is " + Date.now() + " and move.currentTimeStampInMillis is " + move.current_move_time_millis.getMilliseconds());
+    logger.info("Below is for match id +" move.matchId);
+    // Log with human-readable timestamp and additional context
+    logger.info(`[${new Date().toLocaleString()}] Entering getAdjustedTime for user: ${move.userName1}
+        - Current System Time: ${new Date().toISOString()}
+        - Move Timestamp: ${move.current_move_time_millis.toISOString()}
+        - Raw Timestamp (ms): ${Date.now()}`);
+
     let moveTimeUTC = new Date(move.current_move_time_millis);
     let moveTimeIST = new Date(moveTimeUTC.getTime() + (5 * 60 + 30) * 60 * 1000);  // Add 5 hours and 30 minutes
+    
+    logger.info(`[${new Date().toLocaleString()}] Calculating adjusted time 
+        - UTC Move Time: ${moveTimeUTC.toISOString()}
+        - IST Move Time: ${moveTimeIST.toISOString()}`);
 
-    logger.info("inside getAdjustedTime");
     let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeIST.getTime());
+    
     if(!isNullOrUndefinedOrEmpty(secondLastMove)) {
-        logger.info("inside getAdjustedTime more than one move i e second move found");
+        logger.info(`[${new Date().toLocaleString()}] Second move detected
+            - Previous Remaining Time: ${secondLastMove.remaining_millis} ms`);
         getAdjustedTime = secondLastMove.remaining_millis - (Date.now() - moveTimeIST.getTime());
     }
-    logger.info("returning getAdjustedTime " + getAdjustedTime + " for userName1 " + move.userName1);
+
+    logger.info(`[${new Date().toLocaleString()}] Returning adjusted time
+        - Calculated Time: ${getAdjustedTime} ms
+        - User: ${move.userName1}
+        - Final Time (capped at 0): ${getAdjustedTime < 0 ? 0 : getAdjustedTime} ms`);
+
     return getAdjustedTime < 0 ? 0 : getAdjustedTime;
 }
 
