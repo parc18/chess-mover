@@ -258,10 +258,10 @@ async function getLastTwoMovesByMatchId(matchId) {
 function handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLastMove) {
   if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
     lastMove.minuteLeft = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-    lastMove.minuteLeft2 = getAdjustedTime2(lastMove, null);
+    lastMove.minuteLeft2 = getAdjustedTime(lastMove, null);
   } else {
     lastMove.minuteLeft2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-    lastMove.minuteLeft = getAdjustedTime2(lastMove, null);
+    lastMove.minuteLeft = getAdjustedTime(lastMove, null);
   }
 
   if ((lastMove.minuteLeft2 <= timesUpsDeltaCheck || lastMove.minuteLeft <= timesUpsDeltaCheck || lastMove.pgn.endsWith('#'))  &&  shouldRunGameOverCheck) {
@@ -309,7 +309,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
                   }
         }
     }else{
-      const remainingTime = getAdjustedTime2(lastMove, secondLastMove);
+      const remainingTime = getAdjustedTime(lastMove, secondLastMove);
 
       if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
         lastMove.minuteLeft2 = remainingTime;
