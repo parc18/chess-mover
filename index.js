@@ -338,6 +338,8 @@ function getAdjustedTime(move, secondLastMove) {
     logger.info(`[${new Date().toLocaleString()}] Calculating adjusted time 
         - UTC Move Time: ${moveTimeUTC.toISOString()}
         - IST Move Time: ${moveTimeIST.toISOString()}`);
+    logger.info("moveTimeIST.getTime()" + moveTimeIST.getTime());
+    logger.info("Date.now()" + Date.now());    
 
     let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeIST.getTime());
     
