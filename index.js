@@ -341,7 +341,7 @@ function getAdjustedTime(move, secondLastMove) {
     logger.info("moveTimeIST.getTime()" + moveTimeIST.getTime());
     logger.info("Date.now()" + Date.now());    
 
-    let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeUTC.getTime());
+    let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeIST.getTime());
     
     if(!isNullOrUndefinedOrEmpty(secondLastMove)) {
         logger.info(`[${new Date().toLocaleString()}] Second move detected
