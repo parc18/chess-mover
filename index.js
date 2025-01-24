@@ -325,7 +325,7 @@ function handleRunningMove(lastMove, userName, secondLastMove, shouldRunGameOver
 }
 
 function getAdjustedTime(move, secondLastMove) {
-    logger.info("Below is for match id +" move.matchId);
+    logger.info("Below is for match id " + move.matchId);
     // Log with human-readable timestamp and additional context
     logger.info(`[${new Date().toLocaleString()}] Entering getAdjustedTime for user: ${move.userName1}
         - Current System Time: ${new Date().toISOString()}
