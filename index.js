@@ -258,10 +258,10 @@ async function getLastTwoMovesByMatchId(matchId) {
 function handleNoShowCase(lastMove, userName, shouldRunGameOverCheck, secondLastMove) {
   if (lastMove.userName1.toLowerCase() === userName.toLowerCase()) {
     lastMove.minuteLeft = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-    lastMove.minuteLeft2 = getAdjustedTime(lastMove, null);
+    lastMove.minuteLeft2 = getAdjustedTime2(lastMove, null);
   } else {
     lastMove.minuteLeft2 = REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND;
-    lastMove.minuteLeft = getAdjustedTime(lastMove, null);
+    lastMove.minuteLeft = getAdjustedTime2(lastMove, null);
   }
 
   if ((lastMove.minuteLeft2 <= timesUpsDeltaCheck || lastMove.minuteLeft <= timesUpsDeltaCheck || lastMove.pgn.endsWith('#'))  &&  shouldRunGameOverCheck) {
@@ -342,6 +342,38 @@ function getAdjustedTime(move, secondLastMove) {
     logger.info("Date.now()" + Date.now());    
 
     let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeIST.getTime());
+    
+    if(!isNullOrUndefinedOrEmpty(secondLastMove)) {
+        logger.info(`[${new Date().toLocaleString()}] Second move detected
+            - Previous Remaining Time: ${secondLastMove.remaining_millis} ms`);
+        getAdjustedTime = secondLastMove.remaining_millis - (Date.now() - moveTimeIST.getTime());
+    }
+
+    logger.info(`[${new Date().toLocaleString()}] Returning adjusted time
+        - Calculated Time: ${getAdjustedTime} ms
+        - User: ${move.userName1}
+        - Final Time (capped at 0): ${getAdjustedTime < 0 ? 0 : getAdjustedTime} ms`);
+
+    return getAdjustedTime < 0 ? 0 : getAdjustedTime;
+}
+function getAdjustedTime2(move, secondLastMove) {
+    logger.info("Below is for match id " + move.matchId);
+    // Log with human-readable timestamp and additional context
+    logger.info(`[${new Date().toLocaleString()}] Entering getAdjustedTime for user: ${move.userName1}
+        - Current System Time: ${new Date().toISOString()}
+        - Move Timestamp: ${move.current_move_time_millis.toISOString()}
+        - Raw Timestamp (ms): ${Date.now()}`);
+
+    let moveTimeUTC = new Date(move.current_move_time_millis);
+    let moveTimeIST = new Date(moveTimeUTC.getTime() + (5 * 60 + 30) * 60 * 1000);  // Add 5 hours and 30 minutes
+    
+    logger.info(`[${new Date().toLocaleString()}] Calculating adjusted time 
+        - UTC Move Time: ${moveTimeUTC.toISOString()}
+        - IST Move Time: ${moveTimeIST.toISOString()}`);
+    logger.info("moveTimeIST.getTime()" + moveTimeIST.getTime());
+    logger.info("Date.now()" + Date.now());    
+
+    let getAdjustedTime = (REMAINING_TIME_WHITE_IN_SECONDS * ONE_THOUSAND) - (Date.now() - moveTimeUTC.getTime());
     
     if(!isNullOrUndefinedOrEmpty(secondLastMove)) {
         logger.info(`[${new Date().toLocaleString()}] Second move detected
